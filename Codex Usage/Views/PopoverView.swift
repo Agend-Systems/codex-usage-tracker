@@ -4,7 +4,6 @@ import SwiftUI
 struct PopoverView: View {
   @ObservedObject private var preferences = TrackerPreferences.shared
   @ObservedObject private var store = UsageStore.shared
-  @Environment(\.openSettings) private var openSettings
   @State private var creditToRedeem: ResetCredit?
   @State private var showingResetConfirmation = false
   @State private var actionMessage: String?
@@ -98,9 +97,7 @@ struct PopoverView: View {
       }
       .buttonStyle(.plain)
       .help("Refresh")
-      Button {
-        openSettings()
-      } label: {
+      SettingsLink {
         Image(systemName: "gearshape.fill")
       }
       .buttonStyle(.plain)
@@ -277,7 +274,7 @@ struct PopoverView: View {
         Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
         HStack {
           Button("Try again") { Task { await store.reconnect(profile) } }
-          Button("Open settings") { openSettings() }
+          SettingsLink { Text("Open settings") }
         }
       }
     }
