@@ -124,12 +124,13 @@ struct SettingsView: View {
   private var profileEditor: some View {
     let profile = preferences.activeProfile
     return VStack(alignment: .leading, spacing: 14) {
-      LabeledContent("Profile name") {
-        TextField("Personal", text: profileBinding(\.name)).frame(width: 260)
+      HStack(spacing: 12) {
+        Text("Profile name").frame(width: 88, alignment: .leading)
+        TextField("Personal", text: profileBinding(\.name))
       }
-      LabeledContent("Codex home") {
+      HStack(spacing: 12) {
+        Text("Codex home").frame(width: 88, alignment: .leading)
         TextField("Default: $CODEX_HOME or ~/.codex", text: optionalProfileBinding(\.codexHome))
-          .frame(width: 330)
       }
       Text(
         "The app starts `codex app-server` with this CODEX_HOME. Authentication remains managed by Codex."
