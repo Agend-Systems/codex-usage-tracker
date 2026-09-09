@@ -30,9 +30,12 @@ enum TerminalLauncherService {
       ?? FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent(".local/bin", isDirectory: true)
     if let existing = ownedLauncherURLs(for: profile, in: directory).first { return existing }
+    return directory.appendingPathComponent(suggestedLauncherName(for: profile))
+  }
+
+  static func suggestedLauncherName(for profile: CodexProfile) -> String {
     let discriminator = profile.id.uuidString.prefix(8).lowercased()
-    return directory.appendingPathComponent(
-      "codex-\(slug(for: profile.name))-\(discriminator)")
+    return "codex-\(slug(for: profile.name))-\(discriminator)"
   }
 
   static func isInstalled(for profile: CodexProfile, baseDirectory: URL? = nil) -> Bool {

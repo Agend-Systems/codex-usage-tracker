@@ -132,6 +132,40 @@ final class CodexUsageTrackerTests: XCTestCase {
     XCTAssertEqual(merged.limitName, "Codex")
   }
 
+  func testUnknownLiveBucketLeavesMultiBucketCacheUntouched() {
+    let cached = RateLimitsResponse(
+      rateLimits: RateLimitBucket(limitId: "codex"),
+      rateLimitsByLimitId: [
+        "codex": RateLimitBucket(
+          limitId: "codex",
+          primary: RateLimitWindow(usedPercent: 10, windowDurationMins: nil, resetsAt: nil)),
+        "review": RateLimitBucket(
+          limitId: "review",
+          primary: RateLimitWindow(usedPercent: 20, windowDurationMins: nil, resetsAt: nil)),
+      ])
+    let unknown = RateLimitBucket(
+      limitId: "future-limit",
+      primary: RateLimitWindow(usedPercent: 30, windowDurationMins: nil, resetsAt: nil))
+
+    XCTAssertNil(UsageStore.mergingLiveBucket(unknown, into: cached))
+    XCTAssertEqual(cached.buckets.map(\.id), ["codex", "review"])
+  }
+
+  func testCodexHomeComparisonFallsBackToCaseInsensitivePaths() {
+    XCTAssertTrue(
+      CodexAppServerClient.sameDirectory(
+        "/private/tmp/Codex-Usage-Nonexistent",
+        "/private/tmp/codex-usage-nonexistent"))
+  }
+
+  func testNVMVersionsSortNumerically() {
+    let versions = ["v9.0.0", "v20.1.0", "v10.12.0"].sorted {
+      CodexAppServerClient.nvmVersionIsNewer($0, than: $1)
+    }
+
+    XCTAssertEqual(versions, ["v20.1.0", "v10.12.0", "v9.0.0"])
+  }
+
   func testMapKeysProvideStableBucketIdentity() throws {
     let data = Data(
       #"""

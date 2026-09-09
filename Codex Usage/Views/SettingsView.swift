@@ -29,6 +29,7 @@ struct SettingsView: View {
   @State private var selection: SettingsPage? = .accounts
   @State private var pendingDeletion: CodexProfile?
   @State private var launcherInstalled = false
+  @State private var launcherName = ""
   @State private var presentedError: String?
   @State private var showingClearCacheConfirmation = false
 
@@ -194,7 +195,7 @@ struct SettingsView: View {
     VStack(alignment: .leading, spacing: 8) {
       Text("Terminal launcher").font(.headline)
       Text(
-        "Install `\(TerminalLauncherService.launcherURL(for: profile).lastPathComponent)` in ~/.local/bin for this account."
+        "Install `\(launcherName.isEmpty ? TerminalLauncherService.suggestedLauncherName(for: profile) : launcherName)` in ~/.local/bin for this account."
       )
       .font(.caption).foregroundStyle(.secondary)
       Text("Make sure ~/.local/bin is included in your shell’s PATH.")
@@ -202,8 +203,9 @@ struct SettingsView: View {
       HStack {
         Button(launcherInstalled ? "Reinstall launcher" : "Install launcher") {
           do {
-            _ = try TerminalLauncherService.install(for: profile)
+            let url = try TerminalLauncherService.install(for: profile)
             launcherInstalled = true
+            launcherName = url.lastPathComponent
           } catch {
             presentedError = error.localizedDescription
           }
@@ -213,6 +215,7 @@ struct SettingsView: View {
             do {
               try TerminalLauncherService.uninstall(for: profile)
               launcherInstalled = false
+              launcherName = TerminalLauncherService.suggestedLauncherName(for: profile)
             } catch {
               presentedError = error.localizedDescription
             }
@@ -222,6 +225,12 @@ struct SettingsView: View {
     }
     .task(id: profile.id) {
       launcherInstalled = TerminalLauncherService.isInstalled(for: profile)
+      launcherName = TerminalLauncherService.launcherURL(for: profile).lastPathComponent
+    }
+    .onChange(of: profile.name) {
+      if !launcherInstalled {
+        launcherName = TerminalLauncherService.suggestedLauncherName(for: profile)
+      }
     }
   }
 
@@ -282,7 +291,8 @@ struct SettingsView: View {
     let points = history.points(for: preferences.activeProfileID)
     return VStack(spacing: 16) {
       SettingCard(
-        title: "Rolling-window history", subtitle: "Snapshots are retained locally for 90 days."
+        title: "Rolling-window history",
+        subtitle: "Snapshots are retained locally for up to 90 days."
       ) {
         if points.isEmpty {
           ContentUnavailableView(

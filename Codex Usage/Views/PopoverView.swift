@@ -330,7 +330,9 @@ struct PopoverView: View {
   private var footer: some View {
     HStack {
       if let date = snapshot?.fetchedAt {
-        Text("Updated ") + Text(date, format: .relative(presentation: .named))
+        TimelineView(.periodic(from: .now, by: 30)) { _ in
+          Text("Updated ") + Text(date, format: .relative(presentation: .named))
+        }
       } else {
         Text("No usage data yet")
       }

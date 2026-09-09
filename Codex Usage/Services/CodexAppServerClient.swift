@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 struct JSONLBuffer {
@@ -46,11 +47,33 @@ final class ChildProcessRegistry: @unchecked Sendable {
     lock.unlock()
 
     for process in running where process.isRunning { process.terminate() }
-    for process in running where process.isRunning { process.waitUntilExit() }
+    let deadline = Date().addingTimeInterval(2)
+    while running.contains(where: \.isRunning), Date() < deadline {
+      Thread.sleep(forTimeInterval: 0.02)
+    }
+    for process in running where process.isRunning {
+      Darwin.kill(process.processIdentifier, SIGKILL)
+    }
   }
 }
 
 actor CodexAppServerClient {
+  private enum CodexHomeSelection: Equatable {
+    case inheritedDefault
+    case path(String)
+
+    init(_ normalizedPath: String?) {
+      self = normalizedPath.map(Self.path) ?? .inheritedDefault
+    }
+
+    var displayPath: String {
+      switch self {
+      case .inheritedDefault: return "default Codex home"
+      case .path(let path): return path
+      }
+    }
+  }
+
   private struct PendingRequest {
     var continuation: CheckedContinuation<Data, Error>
     var timeoutTask: Task<Void, Never>
@@ -134,6 +157,8 @@ actor CodexAppServerClient {
   private var isInitialized = false
   private var startTask: Task<Void, Error>?
   private var startGeneration = 0
+  private var startingHome: CodexHomeSelection?
+  private var connectedHome: CodexHomeSelection?
   private var rateLimitHandler: (@Sendable (RateLimitBucket) -> Void)?
 
   func setRateLimitHandler(_ handler: (@Sendable (RateLimitBucket) -> Void)?) {
@@ -141,22 +166,57 @@ actor CodexAppServerClient {
   }
 
   func start(codexHome: String?) async throws {
+    let requestedHome = CodexHomeSelection(Self.normalizedCodexHome(codexHome))
     if let startTask {
+      guard homesMatch(startingHome, requestedHome) else {
+        throw CodexTrackerError.codexHomeMismatch(
+          expected: requestedHome.displayPath,
+          actual: startingHome?.displayPath ?? "another Codex home")
+      }
       try await startTask.value
       return
     }
-    if process?.isRunning == true, isInitialized { return }
+    if process?.isRunning == true, isInitialized {
+      guard homesMatch(connectedHome, requestedHome) else {
+        throw CodexTrackerError.codexHomeMismatch(
+          expected: requestedHome.displayPath,
+          actual: connectedHome?.displayPath ?? "another Codex home")
+      }
+      return
+    }
 
     startGeneration += 1
     let generation = startGeneration
+    startingHome = requestedHome
     let task = Task { try await self.performStart(codexHome: codexHome) }
     startTask = task
     do {
       try await task.value
-      if startGeneration == generation { startTask = nil }
+      if startGeneration == generation {
+        connectedHome = requestedHome
+        startingHome = nil
+        startTask = nil
+      }
     } catch {
-      if startGeneration == generation { startTask = nil }
+      if startGeneration == generation {
+        startingHome = nil
+        startTask = nil
+      }
       throw error
+    }
+  }
+
+  private func homesMatch(
+    _ current: CodexHomeSelection?, _ requested: CodexHomeSelection
+  ) -> Bool {
+    guard let current else { return false }
+    switch (current, requested) {
+    case (.inheritedDefault, .inheritedDefault):
+      return true
+    case (.path(let currentPath), .path(let requestedPath)):
+      return Self.sameDirectory(currentPath, requestedPath)
+    default:
+      return false
     }
   }
 
@@ -247,8 +307,8 @@ actor CodexAppServerClient {
         params: InitializeParams(clientInfo: .init(version: version))
       )
       if let requestedHome {
-        guard let actualHome = result.codexHome.map(Self.standardizedPath),
-          actualHome == Self.standardizedPath(requestedHome)
+        guard let actualHome = result.codexHome,
+          Self.sameDirectory(requestedHome, actualHome)
         else {
           throw CodexTrackerError.codexHomeMismatch(
             expected: requestedHome, actual: result.codexHome ?? "not reported")
@@ -265,6 +325,7 @@ actor CodexAppServerClient {
   func stop() {
     intentionallyStopping = true
     startGeneration += 1
+    startingHome = nil
     startTask?.cancel()
     startTask = nil
     tearDownConnection(
@@ -464,6 +525,7 @@ actor CodexAppServerClient {
 
   private func clearConnectionReferences() {
     isInitialized = false
+    connectedHome = nil
     process = nil
     processIdentity = nil
     inputPipe = nil
@@ -503,7 +565,10 @@ actor CodexAppServerClient {
     if let versions = try? FileManager.default.contentsOfDirectory(
       at: nvmRoot, includingPropertiesForKeys: nil)
     {
-      candidates += versions.map { $0.appendingPathComponent("bin/codex").path }.sorted().reversed()
+      candidates +=
+        versions.sorted {
+          Self.nvmVersionIsNewer($0.lastPathComponent, than: $1.lastPathComponent)
+        }.map { $0.appendingPathComponent("bin/codex").path }
     }
     if let path = environment["PATH"] {
       candidates += path.split(separator: ":").map { String($0) + "/codex" }
@@ -517,6 +582,25 @@ actor CodexAppServerClient {
     guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty
     else { return nil }
     return standardizedPath((value as NSString).expandingTildeInPath)
+  }
+
+  nonisolated static func sameDirectory(_ lhs: String, _ rhs: String) -> Bool {
+    let left = URL(fileURLWithPath: lhs)
+    let right = URL(fileURLWithPath: rhs)
+    let keys: Set<URLResourceKey> = [.fileResourceIdentifierKey]
+    if let leftValues = try? left.resourceValues(forKeys: keys),
+      let rightValues = try? right.resourceValues(forKeys: keys),
+      let leftIdentifier = leftValues.fileResourceIdentifier,
+      let rightIdentifier = rightValues.fileResourceIdentifier
+    {
+      return leftIdentifier.isEqual(rightIdentifier)
+    }
+    return standardizedPath(lhs).compare(
+      standardizedPath(rhs), options: .caseInsensitive) == .orderedSame
+  }
+
+  nonisolated static func nvmVersionIsNewer(_ lhs: String, than rhs: String) -> Bool {
+    lhs.compare(rhs, options: .numeric) == .orderedDescending
   }
 
   nonisolated private static func standardizedPath(_ value: String) -> String {

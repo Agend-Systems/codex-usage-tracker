@@ -20,6 +20,7 @@ final class UsageStore: ObservableObject {
   private var refreshAllTask: Task<Void, Never>?
   private var refreshLoop: Task<Void, Never>?
   private var refreshActivityCount = 0
+  private var lastScheduledRefresh: [UUID: Date] = [:]
   private var notifiedThresholds: Set<String> = []
 
   private init() {
@@ -123,6 +124,7 @@ final class UsageStore: ObservableObject {
     }
     if let client = clients.removeValue(forKey: profile.id) { await client.stop() }
     clientHomes.removeValue(forKey: profile.id)
+    lastScheduledRefresh.removeValue(forKey: profile.id)
     snapshots.removeValue(forKey: profile.id)
     states.removeValue(forKey: profile.id)
     history.delete(profileID: profile.id)
@@ -155,11 +157,29 @@ final class UsageStore: ObservableObject {
   }
 
   func clearCachedData() {
+    refreshAllTask?.cancel()
+    refreshAllTask = nil
+    for task in refreshTasks.values { task.cancel() }
+    refreshTasks.removeAll()
+    let currentClients = Array(clients.values)
+    clients.removeAll()
+    clientHomes.removeAll()
+    lastScheduledRefresh.removeAll()
     snapshots.removeAll()
+    states.removeAll()
+    refreshActivityCount = 0
+    isRefreshing = false
     notifiedThresholds.removeAll()
     UserDefaults.standard.removeObject(forKey: "tracker.snapshots.v1")
     history.deleteAll()
     preferences.clearAllResetCreditIdempotencyKeys()
+    Task {
+      await withTaskGroup(of: Void.self) { group in
+        for client in currentClients {
+          group.addTask { await client.stop() }
+        }
+      }
+    }
   }
 
   nonisolated static func merged(
@@ -177,6 +197,36 @@ final class UsageStore: ObservableObject {
       rateLimitReachedType: new.rateLimitReachedType ?? old.rateLimitReachedType,
       spendControlReached: new.spendControlReached ?? old.spendControlReached
     )
+  }
+
+  nonisolated static func mergingLiveBucket(
+    _ bucket: RateLimitBucket, into cached: RateLimitsResponse
+  ) -> RateLimitsResponse? {
+    var response = cached
+    var didMerge = false
+    if var buckets = response.rateLimitsByLimitId {
+      let matchingKey = buckets.keys.first { key in
+        key == bucket.limitId
+          || buckets[key]?.limitId == bucket.limitId
+          || (bucket.limitId == nil && bucket.limitName != nil
+            && buckets[key]?.limitName == bucket.limitName)
+      }
+      if let matchingKey {
+        buckets[matchingKey] = merged(old: buckets[matchingKey], new: bucket)
+        response.rateLimitsByLimitId = buckets
+        didMerge = true
+      }
+    }
+    let primaryMatches =
+      (bucket.limitId != nil && response.rateLimits.limitId == bucket.limitId)
+      || (bucket.limitName != nil && response.rateLimits.limitName == bucket.limitName)
+      || (response.rateLimitsByLimitId?.isEmpty != false
+        && response.rateLimits.id == bucket.id)
+    if primaryMatches {
+      response.rateLimits = merged(old: response.rateLimits, new: bucket)
+      didMerge = true
+    }
+    return didMerge ? response : nil
   }
 
   private func performRefreshAll() async {
@@ -240,47 +290,30 @@ final class UsageStore: ObservableObject {
   }
 
   private func mergeLiveBucket(_ bucket: RateLimitBucket, profileID: UUID) {
-    guard var snapshot = snapshots[profileID], var response = snapshot.limits else {
+    guard var snapshot = snapshots[profileID], let response = snapshot.limits else {
       scheduleRefresh(profileID: profileID)
       return
     }
 
-    var didMerge = false
-    if var buckets = response.rateLimitsByLimitId {
-      let matchingKey = buckets.keys.first { key in
-        key == bucket.limitId
-          || buckets[key]?.limitId == bucket.limitId
-          || (bucket.limitId == nil && bucket.limitName != nil
-            && buckets[key]?.limitName == bucket.limitName)
-      }
-      if let matchingKey {
-        buckets[matchingKey] = Self.merged(old: buckets[matchingKey], new: bucket)
-        response.rateLimitsByLimitId = buckets
-        didMerge = true
-      }
-    }
-    let primaryMatches =
-      (bucket.limitId != nil && response.rateLimits.limitId == bucket.limitId)
-      || (bucket.limitName != nil && response.rateLimits.limitName == bucket.limitName)
-      || (response.rateLimitsByLimitId?.isEmpty != false
-        && response.rateLimits.id == bucket.id)
-    if primaryMatches {
-      response.rateLimits = Self.merged(old: response.rateLimits, new: bucket)
-      didMerge = true
-    }
-    if !didMerge {
-      response.rateLimits = bucket
-      response.rateLimitsByLimitId = nil
+    guard let mergedResponse = Self.mergingLiveBucket(bucket, into: response) else {
       scheduleRefresh(profileID: profileID)
+      return
     }
 
-    snapshot.limits = response
+    snapshot.limits = mergedResponse
     snapshot.fetchedAt = Date()
     snapshots[profileID] = snapshot
     saveCache()
   }
 
   private func scheduleRefresh(profileID: UUID) {
+    let now = Date()
+    if let lastRefresh = lastScheduledRefresh[profileID],
+      now.timeIntervalSince(lastRefresh) < 30
+    {
+      return
+    }
+    lastScheduledRefresh[profileID] = now
     guard let profile = preferences.profiles.first(where: { $0.id == profileID }) else { return }
     Task { await refreshProfile(profile) }
   }
