@@ -43,8 +43,7 @@ struct PopoverView: View {
       }
       .padding(16)
     }
-    .frame(width: TrackerDesign.popoverWidth)
-    .frame(maxHeight: 720)
+    .frame(width: TrackerDesign.popoverWidth, height: 620)
     .background(.ultraThinMaterial)
     .alert("Use a rate-limit reset?", isPresented: $showingResetConfirmation) {
       Button("Cancel", role: .cancel) {}
