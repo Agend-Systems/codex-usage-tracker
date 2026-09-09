@@ -27,7 +27,9 @@ struct PopoverView: View {
           ForEach(limits.buckets) { bucket in
             bucketSection(bucket)
           }
-          if let resetCredits = limits.rateLimitResetCredits, resetCredits.availableCount > 0 {
+          if let resetCredits = limits.rateLimitResetCredits,
+            (resetCredits.availableCount ?? resetCredits.availableCredits().count) > 0
+          {
             resetCreditsCard(resetCredits)
           }
         } else if !state.isFailure {
@@ -47,6 +49,7 @@ struct PopoverView: View {
     .alert("Use a rate-limit reset?", isPresented: $showingResetConfirmation) {
       Button("Cancel", role: .cancel) {}
       Button("Reset usage window") {
+        guard let creditToRedeem else { return }
         Task {
           do { actionMessage = try await store.redeem(creditToRedeem, for: profile) } catch {
             actionMessage = error.localizedDescription
@@ -54,7 +57,7 @@ struct PopoverView: View {
         }
       }
     } message: {
-      Text("This consumes one earned reset credit. The action cannot be undone.")
+      Text(redemptionMessage)
     }
   }
 
@@ -67,7 +70,7 @@ struct PopoverView: View {
         ForEach(preferences.profiles) { item in
           Button {
             preferences.activeProfileID = item.id
-            Task { await store.refresh(item) }
+            Task { await store.refreshProfile(item) }
           } label: {
             if item.id == profile.id {
               Label(item.name, systemImage: "checkmark")
@@ -86,7 +89,7 @@ struct PopoverView: View {
       .fixedSize()
       Spacer()
       Button {
-        Task { await store.refresh(profile) }
+        Task { await store.refreshProfile(profile) }
       } label: {
         Image(systemName: "arrow.clockwise")
           .rotationEffect(store.isRefreshing ? .degrees(360) : .zero)
@@ -97,11 +100,13 @@ struct PopoverView: View {
       }
       .buttonStyle(.plain)
       .help("Refresh")
+      .accessibilityLabel("Refresh usage")
       SettingsLink {
         Image(systemName: "gearshape.fill")
       }
       .buttonStyle(.plain)
       .help("Settings")
+      .accessibilityLabel("Settings")
     }
   }
 
@@ -109,7 +114,8 @@ struct PopoverView: View {
     HStack(spacing: 8) {
       StatusDot(
         color: state == .connected
-          ? TrackerDesign.green : state == .connecting ? TrackerDesign.amber : .red)
+          ? TrackerDesign.green : state == .connecting ? TrackerDesign.amber : TrackerDesign.red,
+        label: state.label)
       VStack(alignment: .leading, spacing: 2) {
         Text(store.serviceStatus).font(.subheadline.weight(.medium))
         HStack(spacing: 5) {
@@ -138,13 +144,21 @@ struct PopoverView: View {
       }
       if let primary = bucket.primary {
         RateLimitCard(
-          title: "Session usage", window: primary, showRemaining: preferences.showRemaining)
+          title: "Session usage",
+          window: primary,
+          showRemaining: preferences.showRemaining,
+          warningThreshold: preferences.warningThreshold,
+          criticalThreshold: preferences.criticalThreshold)
       }
       if let secondary = bucket.secondary {
         RateLimitCard(
-          title: "Weekly usage", window: secondary, showRemaining: preferences.showRemaining)
+          title: "Weekly usage",
+          window: secondary,
+          showRemaining: preferences.showRemaining,
+          warningThreshold: preferences.warningThreshold,
+          criticalThreshold: preferences.criticalThreshold)
       }
-      if let credits = bucket.credits, credits.hasCredits {
+      if let credits = bucket.credits, credits.hasCredits == true {
         creditsCard(credits)
       }
       if let spendLimit = bucket.individualLimit {
@@ -159,19 +173,36 @@ struct PopoverView: View {
         HStack(alignment: .firstTextBaseline) {
           VStack(alignment: .leading, spacing: 3) {
             Text("Spend control").font(.headline)
-            Text("\(limit.used) of \(limit.limit)")
+            Text("\(limit.used ?? "—") of \(limit.limit ?? "—")")
               .font(.caption)
               .foregroundStyle(.secondary)
           }
           Spacer()
-          Text("\(Int(limit.remainingPercent.rounded()))% left")
-            .font(.subheadline.bold())
-            .foregroundStyle(
-              reached ? TrackerDesign.red : TrackerDesign.usageColor(limit.usedPercent))
+          if let remainingPercent = limit.remainingPercent, let usedPercent = limit.usedPercent {
+            Text("\(Int(remainingPercent.rounded()))% left")
+              .font(.subheadline.bold())
+              .foregroundStyle(
+                reached
+                  ? TrackerDesign.red
+                  : TrackerDesign.usageColor(
+                    usedPercent,
+                    warning: preferences.warningThreshold,
+                    critical: preferences.criticalThreshold))
+          }
         }
-        UsageProgress(value: limit.usedPercent, showRemaining: true)
+        if let usedPercent = limit.usedPercent {
+          UsageProgress(
+            value: usedPercent,
+            showRemaining: true,
+            warningThreshold: preferences.warningThreshold,
+            criticalThreshold: preferences.criticalThreshold)
+        }
         HStack {
-          Text("Resets ") + Text(limit.resetDate, style: .relative)
+          if let resetDate = limit.resetDate {
+            Text("Resets ") + Text(resetDate, format: .relative(presentation: .named))
+          } else {
+            Text("Reset time unavailable")
+          }
           Spacer()
           if reached { Text("Limit reached").foregroundStyle(TrackerDesign.red) }
         }
@@ -186,11 +217,14 @@ struct PopoverView: View {
       HStack {
         VStack(alignment: .leading, spacing: 4) {
           Text("Credits").font(.headline)
-          Text(credits.unlimited ? "Unlimited balance" : "Available for additional Codex usage")
-            .font(.caption).foregroundStyle(.secondary)
+          Text(
+            credits.unlimited == true
+              ? "Unlimited balance" : "Available for additional Codex usage"
+          )
+          .font(.caption).foregroundStyle(.secondary)
         }
         Spacer()
-        Text(credits.unlimited ? "∞" : credits.balance ?? "—")
+        Text(credits.unlimited == true ? "∞" : credits.balance ?? "—")
           .font(.title2.bold()).monospacedDigit()
           .foregroundStyle(TrackerDesign.green)
       }
@@ -203,17 +237,20 @@ struct PopoverView: View {
         HStack {
           Label("Earned resets", systemImage: "arrow.counterclockwise.circle.fill").font(.headline)
           Spacer()
-          Text("\(summary.availableCount)").font(.title2.bold()).foregroundStyle(
-            TrackerDesign.green)
+          Text("\(summary.availableCount ?? summary.availableCredits().count)")
+            .font(.title2.bold()).foregroundStyle(
+              TrackerDesign.green)
         }
         Text("Reset an eligible Codex rate-limit window without waiting for its timer.")
           .font(.caption).foregroundStyle(.secondary)
         Button("Use reset credit…") {
-          creditToRedeem = summary.credits?.first
+          creditToRedeem = summary.nextAvailableCredit()
           showingResetConfirmation = true
         }
         .buttonStyle(.borderedProminent)
         .tint(TrackerDesign.green)
+        .disabled(
+          summary.nextAvailableCredit() == nil || store.redeemingProfiles.contains(profile.id))
       }
     }
   }
@@ -293,7 +330,7 @@ struct PopoverView: View {
   private var footer: some View {
     HStack {
       if let date = snapshot?.fetchedAt {
-        Text("Updated ") + Text(date, style: .relative) + Text(" ago")
+        Text("Updated ") + Text(date, format: .relative(presentation: .named))
       } else {
         Text("No usage data yet")
       }
@@ -310,12 +347,28 @@ struct PopoverView: View {
     if seconds >= 60 { return "\(seconds / 60)m" }
     return "\(seconds)s"
   }
+
+  private var redemptionMessage: String {
+    guard let creditToRedeem else {
+      return "No available reset credit was selected."
+    }
+    let name = creditToRedeem.title?.nilIfEmpty ?? "Earned reset credit"
+    let expiry = creditToRedeem.expiresAt.map {
+      Date(timeIntervalSince1970: TimeInterval($0)).formatted(date: .abbreviated, time: .shortened)
+    }
+    return [
+      "This consumes “\(name)”\(expiry.map { ", expiring \($0)" } ?? "").",
+      "The action cannot be undone.",
+    ].joined(separator: " ")
+  }
 }
 
 struct RateLimitCard: View {
   var title: String
   var window: RateLimitWindow
   var showRemaining: Bool
+  var warningThreshold: Double
+  var criticalThreshold: Double
 
   private var displayValue: Double { showRemaining ? window.remainingPercent : window.usedPercent }
 
@@ -330,12 +383,18 @@ struct RateLimitCard: View {
           Spacer()
           Text("\(Int(displayValue.rounded()))%")
             .font(.title2.bold()).monospacedDigit()
-            .foregroundStyle(TrackerDesign.usageColor(window.usedPercent))
+            .foregroundStyle(
+              TrackerDesign.usageColor(
+                window.usedPercent, warning: warningThreshold, critical: criticalThreshold))
         }
-        UsageProgress(value: window.usedPercent, showRemaining: showRemaining)
+        UsageProgress(
+          value: window.usedPercent,
+          showRemaining: showRemaining,
+          warningThreshold: warningThreshold,
+          criticalThreshold: criticalThreshold)
         HStack {
           if let resetDate = window.resetDate {
-            Text("Resets ") + Text(resetDate, style: .relative)
+            Text("Resets ") + Text(resetDate, format: .relative(presentation: .named))
           } else {
             Text("Reset time unavailable")
           }

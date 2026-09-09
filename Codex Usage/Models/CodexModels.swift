@@ -56,7 +56,7 @@ struct CodexAccount: Codable, Equatable {
   }
 }
 
-struct RateLimitWindow: Codable, Equatable {
+struct RateLimitWindow: Codable, Equatable, Sendable {
   var usedPercent: Double
   var windowDurationMins: Int?
   var resetsAt: Int?
@@ -78,32 +78,81 @@ struct RateLimitWindow: Codable, Equatable {
   }
 }
 
-struct CreditSnapshot: Codable, Equatable {
-  var hasCredits: Bool
-  var unlimited: Bool
-  var balance: String?
+struct CreditSnapshot: Codable, Equatable, Sendable {
+  var hasCredits: Bool? = nil
+  var unlimited: Bool? = nil
+  var balance: String? = nil
 }
 
-struct SpendControlLimitSnapshot: Codable, Equatable {
-  var limit: String
-  var used: String
-  var remainingPercent: Double
-  var resetsAt: Int
+struct SpendControlLimitSnapshot: Codable, Equatable, Sendable {
+  var limit: String? = nil
+  var used: String? = nil
+  var remainingPercent: Double? = nil
+  var resetsAt: Int? = nil
 
-  var resetDate: Date { Date(timeIntervalSince1970: TimeInterval(resetsAt)) }
-  var usedPercent: Double { max(0, min(100, 100 - remainingPercent)) }
+  var resetDate: Date? { resetsAt.map { Date(timeIntervalSince1970: TimeInterval($0)) } }
+  var usedPercent: Double? { remainingPercent.map { max(0, min(100, 100 - $0)) } }
 }
 
-struct RateLimitBucket: Codable, Identifiable, Equatable {
-  var limitId: String?
-  var limitName: String?
-  var planType: String?
-  var primary: RateLimitWindow?
-  var secondary: RateLimitWindow?
-  var credits: CreditSnapshot?
-  var individualLimit: SpendControlLimitSnapshot?
-  var rateLimitReachedType: String?
-  var spendControlReached: Bool?
+struct RateLimitBucket: Codable, Identifiable, Equatable, Sendable {
+  var limitId: String? = nil
+  var limitName: String? = nil
+  var planType: String? = nil
+  var primary: RateLimitWindow? = nil
+  var secondary: RateLimitWindow? = nil
+  var credits: CreditSnapshot? = nil
+  var individualLimit: SpendControlLimitSnapshot? = nil
+  var rateLimitReachedType: String? = nil
+  var spendControlReached: Bool? = nil
+
+  private enum CodingKeys: String, CodingKey {
+    case limitId
+    case limitName
+    case planType
+    case primary
+    case secondary
+    case credits
+    case individualLimit
+    case rateLimitReachedType
+    case spendControlReached
+  }
+
+  init(
+    limitId: String? = nil,
+    limitName: String? = nil,
+    planType: String? = nil,
+    primary: RateLimitWindow? = nil,
+    secondary: RateLimitWindow? = nil,
+    credits: CreditSnapshot? = nil,
+    individualLimit: SpendControlLimitSnapshot? = nil,
+    rateLimitReachedType: String? = nil,
+    spendControlReached: Bool? = nil
+  ) {
+    self.limitId = limitId
+    self.limitName = limitName
+    self.planType = planType
+    self.primary = primary
+    self.secondary = secondary
+    self.credits = credits
+    self.individualLimit = individualLimit
+    self.rateLimitReachedType = rateLimitReachedType
+    self.spendControlReached = spendControlReached
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    limitId = try? container.decodeIfPresent(String.self, forKey: .limitId)
+    limitName = try? container.decodeIfPresent(String.self, forKey: .limitName)
+    planType = try? container.decodeIfPresent(String.self, forKey: .planType)
+    primary = try? container.decodeIfPresent(RateLimitWindow.self, forKey: .primary)
+    secondary = try? container.decodeIfPresent(RateLimitWindow.self, forKey: .secondary)
+    credits = try? container.decodeIfPresent(CreditSnapshot.self, forKey: .credits)
+    individualLimit =
+      try? container.decodeIfPresent(SpendControlLimitSnapshot.self, forKey: .individualLimit)
+    rateLimitReachedType =
+      try? container.decodeIfPresent(String.self, forKey: .rateLimitReachedType)
+    spendControlReached = try? container.decodeIfPresent(Bool.self, forKey: .spendControlReached)
+  }
 
   var id: String { limitId ?? limitName ?? "codex" }
   var displayName: String {
@@ -113,30 +162,78 @@ struct RateLimitBucket: Codable, Identifiable, Equatable {
   }
 }
 
-struct ResetCredit: Codable, Identifiable, Equatable {
-  var id: String
-  var resetType: String
-  var status: String
-  var grantedAt: Int
-  var expiresAt: Int?
-  var title: String?
-  var description: String?
+struct ResetCredit: Codable, Equatable, Sendable {
+  var id: String? = nil
+  var resetType: String? = nil
+  var status: String? = nil
+  var grantedAt: Int? = nil
+  var expiresAt: Int? = nil
+  var title: String? = nil
+  var description: String? = nil
 }
 
-struct ResetCreditsSummary: Codable, Equatable {
-  var availableCount: Int
-  var credits: [ResetCredit]?
+struct ResetCreditsSummary: Codable, Equatable, Sendable {
+  var availableCount: Int? = nil
+  var credits: [ResetCredit]? = nil
+
+  func availableCredits(at date: Date = .now) -> [ResetCredit] {
+    (credits ?? []).filter { credit in
+      credit.status?.lowercased() == "available"
+        && (credit.expiresAt.map { Date(timeIntervalSince1970: TimeInterval($0)) > date } ?? true)
+    }
+  }
+
+  func nextAvailableCredit(at date: Date = .now) -> ResetCredit? {
+    availableCredits(at: date).min {
+      ($0.expiresAt ?? .max) < ($1.expiresAt ?? .max)
+    }
+  }
 }
 
-struct RateLimitsResponse: Codable, Equatable {
+struct RateLimitsResponse: Codable, Equatable, Sendable {
   var accountId: String?
   var rateLimits: RateLimitBucket
   var rateLimitsByLimitId: [String: RateLimitBucket]?
   var rateLimitResetCredits: ResetCreditsSummary?
 
+  private enum CodingKeys: String, CodingKey {
+    case accountId
+    case rateLimits
+    case rateLimitsByLimitId
+    case rateLimitResetCredits
+  }
+
+  init(
+    accountId: String? = nil,
+    rateLimits: RateLimitBucket = RateLimitBucket(),
+    rateLimitsByLimitId: [String: RateLimitBucket]? = nil,
+    rateLimitResetCredits: ResetCreditsSummary? = nil
+  ) {
+    self.accountId = accountId
+    self.rateLimits = rateLimits
+    self.rateLimitsByLimitId = rateLimitsByLimitId
+    self.rateLimitResetCredits = rateLimitResetCredits
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    accountId = try? container.decodeIfPresent(String.self, forKey: .accountId)
+    rateLimits =
+      (try? container.decodeIfPresent(RateLimitBucket.self, forKey: .rateLimits))
+      ?? RateLimitBucket()
+    rateLimitsByLimitId =
+      try? container.decodeIfPresent([String: RateLimitBucket].self, forKey: .rateLimitsByLimitId)
+    rateLimitResetCredits =
+      try? container.decodeIfPresent(ResetCreditsSummary.self, forKey: .rateLimitResetCredits)
+  }
+
   var buckets: [RateLimitBucket] {
     if let values = rateLimitsByLimitId, !values.isEmpty {
-      return values.values.sorted {
+      return values.map { key, value in
+        var bucket = value
+        if bucket.limitId?.nilIfEmpty == nil { bucket.limitId = key }
+        return bucket
+      }.sorted {
         $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending
       }
     }
@@ -144,15 +241,15 @@ struct RateLimitsResponse: Codable, Equatable {
   }
 }
 
-struct TokenUsageSummary: Codable, Equatable {
-  var lifetimeTokens: Int?
-  var peakDailyTokens: Int?
-  var longestRunningTurnSec: Int?
-  var currentStreakDays: Int?
-  var longestStreakDays: Int?
+struct TokenUsageSummary: Codable, Equatable, Sendable {
+  var lifetimeTokens: Int? = nil
+  var peakDailyTokens: Int? = nil
+  var longestRunningTurnSec: Int? = nil
+  var currentStreakDays: Int? = nil
+  var longestStreakDays: Int? = nil
 }
 
-struct DailyUsageBucket: Codable, Identifiable, Equatable {
+struct DailyUsageBucket: Codable, Identifiable, Equatable, Sendable {
   var startDate: String
   var tokens: Int
   var id: String { startDate }
@@ -169,9 +266,31 @@ struct DailyUsageBucket: Codable, Identifiable, Equatable {
   }()
 }
 
-struct TokenUsageResponse: Codable, Equatable {
+struct TokenUsageResponse: Codable, Equatable, Sendable {
   var summary: TokenUsageSummary
   var dailyUsageBuckets: [DailyUsageBucket]?
+
+  private enum CodingKeys: String, CodingKey {
+    case summary
+    case dailyUsageBuckets
+  }
+
+  init(
+    summary: TokenUsageSummary = TokenUsageSummary(),
+    dailyUsageBuckets: [DailyUsageBucket]? = nil
+  ) {
+    self.summary = summary
+    self.dailyUsageBuckets = dailyUsageBuckets
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    summary =
+      (try? container.decodeIfPresent(TokenUsageSummary.self, forKey: .summary))
+      ?? TokenUsageSummary()
+    dailyUsageBuckets =
+      try? container.decodeIfPresent([DailyUsageBucket].self, forKey: .dailyUsageBuckets)
+  }
 }
 
 struct UsageSnapshot: Codable, Equatable {
@@ -181,7 +300,7 @@ struct UsageSnapshot: Codable, Equatable {
   var fetchedAt: Date
 }
 
-struct HistoryPoint: Codable, Identifiable, Equatable {
+struct HistoryPoint: Codable, Identifiable, Equatable, Sendable {
   var id: UUID = UUID()
   var profileId: UUID
   var date: Date
@@ -218,6 +337,9 @@ enum CodexTrackerError: LocalizedError, Equatable {
   case rpc(code: Int, message: String)
   case incompatibleCLI
   case notAuthenticated
+  case requestTimedOut(String)
+  case codexHomeMismatch(expected: String, actual: String)
+  case redemptionInProgress
 
   var errorDescription: String? {
     switch self {
@@ -236,10 +358,16 @@ enum CodexTrackerError: LocalizedError, Equatable {
         "This Codex version does not expose the usage APIs required by the tracker. Please update Codex."
     case .notAuthenticated:
       return "Sign in to Codex with ChatGPT, then refresh."
+    case .requestTimedOut(let method):
+      return "Codex did not respond to \(method) within 20 seconds."
+    case .codexHomeMismatch(let expected, let actual):
+      return "Codex connected to \(actual) instead of the configured home \(expected)."
+    case .redemptionInProgress:
+      return "A reset credit is already being redeemed for this profile."
     }
   }
 }
 
 extension String {
-  fileprivate var nilIfEmpty: String? { isEmpty ? nil : self }
+  var nilIfEmpty: String? { isEmpty ? nil : self }
 }

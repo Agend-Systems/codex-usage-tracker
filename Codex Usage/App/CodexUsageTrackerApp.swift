@@ -31,7 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
   }
 
   func applicationWillTerminate(_ notification: Notification) {
-    Task { @MainActor in UsageStore.shared.stop() }
+    UsageStore.terminateChildrenSynchronously()
   }
 
   func userNotificationCenter(

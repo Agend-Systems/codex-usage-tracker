@@ -1,21 +1,44 @@
 name: Build and test
 
 on:
-  push:
   pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   macos:
     runs-on: macos-15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Build
+      - name: Select Xcode 26.0.1
+        run: sudo xcode-select -s /Applications/Xcode_26.0.1.app/Contents/Developer
+      - name: Lint
+        run: xcrun swift-format lint --strict --recursive .
+      - name: Build Debug
         run: >-
           xcodebuild -project "Codex Usage.xcodeproj" -scheme "Codex Usage"
-          -configuration Debug -derivedDataPath "$RUNNER_TEMP/codex-usage-derived"
-          CODE_SIGNING_ALLOWED=NO build
+          -configuration Debug -derivedDataPath "$RUNNER_TEMP/codex-usage-debug"
+          CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+          SWIFT_STRICT_CONCURRENCY=complete build
       - name: Test
         run: >-
           xcodebuild -project "Codex Usage.xcodeproj" -scheme "Codex Usage"
-          -configuration Debug -derivedDataPath "$RUNNER_TEMP/codex-usage-derived"
-          CODE_SIGNING_ALLOWED=NO test
+          -configuration Debug -derivedDataPath "$RUNNER_TEMP/codex-usage-debug"
+          -destination "platform=macOS"
+          CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+          SWIFT_STRICT_CONCURRENCY=complete test
+      - name: Build Release
+        run: >-
+          xcodebuild -project "Codex Usage.xcodeproj" -scheme "Codex Usage"
+          -configuration Release -derivedDataPath "$RUNNER_TEMP/codex-usage-release"
+          CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+          SWIFT_STRICT_CONCURRENCY=complete build

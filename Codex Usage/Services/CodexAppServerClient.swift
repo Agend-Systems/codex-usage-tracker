@@ -1,6 +1,61 @@
 import Foundation
 
+struct JSONLBuffer {
+  private(set) var data = Data()
+
+  mutating func append(_ chunk: Data) -> [Data] {
+    data.append(chunk)
+    var lines: [Data] = []
+    while let newline = data.firstIndex(of: 0x0A) {
+      let line = Data(data[..<newline])
+      data.removeSubrange(...newline)
+      if !line.isEmpty { lines.append(line) }
+    }
+    return lines
+  }
+
+  mutating func removeAll() {
+    data.removeAll(keepingCapacity: true)
+  }
+}
+
+final class ChildProcessRegistry: @unchecked Sendable {
+  static let shared = ChildProcessRegistry()
+
+  private let lock = NSLock()
+  private var processes: [ObjectIdentifier: Process] = [:]
+
+  private init() {}
+
+  func register(_ process: Process) {
+    lock.lock()
+    processes[ObjectIdentifier(process)] = process
+    lock.unlock()
+  }
+
+  func unregister(_ process: Process) {
+    lock.lock()
+    processes.removeValue(forKey: ObjectIdentifier(process))
+    lock.unlock()
+  }
+
+  func terminateAllSynchronously() {
+    lock.lock()
+    let running = Array(processes.values)
+    processes.removeAll()
+    lock.unlock()
+
+    for process in running where process.isRunning { process.terminate() }
+    for process in running where process.isRunning { process.waitUntilExit() }
+  }
+}
+
 actor CodexAppServerClient {
+  private struct PendingRequest {
+    var continuation: CheckedContinuation<Data, Error>
+    var timeoutTask: Task<Void, Never>
+  }
+
   private struct RPCRequest<Params: Encodable>: Encodable {
     var method: String
     var id: Int?
@@ -30,6 +85,7 @@ actor CodexAppServerClient {
 
   private struct InitializeResult: Decodable {
     var userAgent: String?
+    var codexHome: String?
     var platformFamily: String?
     var platformOs: String?
   }
@@ -62,14 +118,22 @@ actor CodexAppServerClient {
   }
 
   private var process: Process?
+  private var processIdentity: ObjectIdentifier?
   private var inputPipe: Pipe?
   private var outputPipe: Pipe?
   private var errorPipe: Pipe?
-  private var outputBuffer = Data()
+  private var outputContinuation: AsyncStream<Data>.Continuation?
+  private var errorContinuation: AsyncStream<Data>.Continuation?
+  private var outputReaderTask: Task<Void, Never>?
+  private var errorReaderTask: Task<Void, Never>?
+  private var outputBuffer = JSONLBuffer()
   private var errorBuffer = Data()
-  private var pending: [Int: CheckedContinuation<Data, Error>] = [:]
+  private var pending: [Int: PendingRequest] = [:]
   private var nextID = 1
   private var intentionallyStopping = false
+  private var isInitialized = false
+  private var startTask: Task<Void, Error>?
+  private var startGeneration = 0
   private var rateLimitHandler: (@Sendable (RateLimitBucket) -> Void)?
 
   func setRateLimitHandler(_ handler: (@Sendable (RateLimitBucket) -> Void)?) {
@@ -77,19 +141,41 @@ actor CodexAppServerClient {
   }
 
   func start(codexHome: String?) async throws {
-    if process?.isRunning == true { return }
+    if let startTask {
+      try await startTask.value
+      return
+    }
+    if process?.isRunning == true, isInitialized { return }
+
+    startGeneration += 1
+    let generation = startGeneration
+    let task = Task { try await self.performStart(codexHome: codexHome) }
+    startTask = task
+    do {
+      try await task.value
+      if startGeneration == generation { startTask = nil }
+    } catch {
+      if startGeneration == generation { startTask = nil }
+      throw error
+    }
+  }
+
+  private func performStart(codexHome: String?) async throws {
     guard let executable = Self.resolveCodexExecutable() else {
       throw CodexTrackerError.executableNotFound
     }
 
     intentionallyStopping = false
-    outputBuffer.removeAll(keepingCapacity: true)
+    isInitialized = false
+    outputBuffer.removeAll()
     errorBuffer.removeAll(keepingCapacity: true)
 
     let process = Process()
     let input = Pipe()
     let output = Pipe()
     let errors = Pipe()
+    let (outputStream, outputContinuation) = AsyncStream<Data>.makeStream()
+    let (errorStream, errorContinuation) = AsyncStream<Data>.makeStream()
     process.executableURL = executable
     process.arguments = ["app-server", "--stdio"]
     process.standardInput = input
@@ -97,52 +183,92 @@ actor CodexAppServerClient {
     process.standardError = errors
 
     var environment = ProcessInfo.processInfo.environment
-    if let codexHome = codexHome?.trimmingCharacters(in: .whitespacesAndNewlines),
-      !codexHome.isEmpty
-    {
-      environment["CODEX_HOME"] = (codexHome as NSString).expandingTildeInPath
-    }
+    let requestedHome = Self.normalizedCodexHome(codexHome)
+    if let requestedHome { environment["CODEX_HOME"] = requestedHome }
     process.environment = environment
 
-    output.fileHandleForReading.readabilityHandler = { [weak self] handle in
+    output.fileHandleForReading.readabilityHandler = { handle in
       let data = handle.availableData
-      guard !data.isEmpty else { return }
-      Task { await self?.receiveOutput(data) }
+      guard !data.isEmpty else {
+        handle.readabilityHandler = nil
+        outputContinuation.finish()
+        return
+      }
+      outputContinuation.yield(data)
     }
-    errors.fileHandleForReading.readabilityHandler = { [weak self] handle in
+    errors.fileHandleForReading.readabilityHandler = { handle in
       let data = handle.availableData
-      guard !data.isEmpty else { return }
-      Task { await self?.receiveError(data) }
+      guard !data.isEmpty else {
+        handle.readabilityHandler = nil
+        errorContinuation.finish()
+        return
+      }
+      errorContinuation.yield(data)
     }
-    process.terminationHandler = { [weak self] process in
-      Task { await self?.processTerminated(status: process.terminationStatus) }
+    process.terminationHandler = { [weak self] terminatedProcess in
+      ChildProcessRegistry.shared.unregister(terminatedProcess)
+      let identity = ObjectIdentifier(terminatedProcess)
+      Task {
+        await self?.processTerminated(
+          identity: identity, status: terminatedProcess.terminationStatus)
+      }
     }
 
-    try process.run()
+    do {
+      try process.run()
+    } catch {
+      output.fileHandleForReading.readabilityHandler = nil
+      errors.fileHandleForReading.readabilityHandler = nil
+      outputContinuation.finish()
+      errorContinuation.finish()
+      throw error
+    }
+
+    ChildProcessRegistry.shared.register(process)
     self.process = process
+    processIdentity = ObjectIdentifier(process)
     inputPipe = input
     outputPipe = output
     errorPipe = errors
+    self.outputContinuation = outputContinuation
+    self.errorContinuation = errorContinuation
+    outputReaderTask = Task { [weak self] in
+      for await chunk in outputStream { await self?.receiveOutput(chunk) }
+    }
+    errorReaderTask = Task { [weak self] in
+      for await chunk in errorStream { await self?.receiveError(chunk) }
+    }
 
-    let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
-    let _: InitializeResult = try await request(
-      method: "initialize",
-      params: InitializeParams(clientInfo: .init(version: version))
-    )
-    try sendNotification(method: "initialized", params: EmptyParams())
+    do {
+      let version =
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
+      let result: InitializeResult = try await request(
+        method: "initialize",
+        params: InitializeParams(clientInfo: .init(version: version))
+      )
+      if let requestedHome {
+        guard let actualHome = result.codexHome.map(Self.standardizedPath),
+          actualHome == Self.standardizedPath(requestedHome)
+        else {
+          throw CodexTrackerError.codexHomeMismatch(
+            expected: requestedHome, actual: result.codexHome ?? "not reported")
+        }
+      }
+      try sendNotification(method: "initialized", params: EmptyParams())
+      isInitialized = true
+    } catch {
+      tearDownConnection(error: error, terminate: true)
+      throw error
+    }
   }
 
   func stop() {
     intentionallyStopping = true
-    outputPipe?.fileHandleForReading.readabilityHandler = nil
-    errorPipe?.fileHandleForReading.readabilityHandler = nil
-    inputPipe?.fileHandleForWriting.closeFile()
-    if process?.isRunning == true { process?.terminate() }
-    failPending(with: CodexTrackerError.serverExited("Connection closed"))
-    process = nil
-    inputPipe = nil
-    outputPipe = nil
-    errorPipe = nil
+    startGeneration += 1
+    startTask?.cancel()
+    startTask = nil
+    tearDownConnection(
+      error: CodexTrackerError.serverExited("Connection closed"), terminate: true)
   }
 
   func readAccount(refreshToken: Bool = false) async throws -> AccountReadResponse {
@@ -172,17 +298,19 @@ actor CodexAppServerClient {
     }
   }
 
-  func consumeResetCredit(id: String?) async throws -> ConsumeResetResponse {
+  func consumeResetCredit(id: String?, idempotencyKey: String) async throws
+    -> ConsumeResetResponse
+  {
     try await request(
       method: "account/rateLimitResetCredit/consume",
-      params: ConsumeResetParams(idempotencyKey: UUID().uuidString, creditId: id)
+      params: ConsumeResetParams(idempotencyKey: idempotencyKey, creditId: id)
     )
   }
 
   private func request<Result: Decodable, Params: Encodable>(method: String, params: Params)
     async throws -> Result
   {
-    guard process?.isRunning == true else {
+    guard process?.isRunning == true, isInitialized || method == "initialize" else {
       throw CodexTrackerError.serverExited("Not running")
     }
     let id = nextID
@@ -191,14 +319,16 @@ actor CodexAppServerClient {
     var data = try JSONEncoder().encode(message)
     data.append(0x0A)
 
-    let responseData: Data = try await withCheckedThrowingContinuation { continuation in
-      pending[id] = continuation
-      do {
-        try inputPipe?.fileHandleForWriting.write(contentsOf: data)
-      } catch {
-        pending.removeValue(forKey: id)
-        continuation.resume(throwing: error)
+    let responseData: Data
+    do {
+      responseData = try await awaitResponse(id: id, method: method, writing: data)
+    } catch {
+      if let trackerError = error as? CodexTrackerError,
+        case .requestTimedOut = trackerError
+      {
+        tearDownConnection(error: error, terminate: true)
       }
+      throw error
     }
 
     guard let envelope = try? JSONDecoder().decode(RPCResponse<Result>.self, from: responseData)
@@ -212,36 +342,78 @@ actor CodexAppServerClient {
     return result
   }
 
+  private func awaitResponse(id: Int, method: String, writing data: Data) async throws -> Data {
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { continuation in
+        if Task.isCancelled {
+          continuation.resume(throwing: CancellationError())
+          return
+        }
+        let timeoutTask = Task { [weak self] in
+          do {
+            try await Task.sleep(for: .seconds(20))
+          } catch {
+            return
+          }
+          await self?.timeoutPendingRequest(id: id, method: method)
+        }
+        pending[id] = PendingRequest(
+          continuation: continuation,
+          timeoutTask: timeoutTask)
+        do {
+          guard let writer = inputPipe?.fileHandleForWriting else {
+            throw CodexTrackerError.serverExited("Input pipe is unavailable")
+          }
+          try writer.write(contentsOf: data)
+        } catch {
+          pending.removeValue(forKey: id)?.timeoutTask.cancel()
+          continuation.resume(throwing: error)
+        }
+      }
+    } onCancel: {
+      Task { await self.cancelPendingRequest(id: id) }
+    }
+  }
+
+  private func cancelPendingRequest(id: Int) {
+    guard let request = pending.removeValue(forKey: id) else { return }
+    request.timeoutTask.cancel()
+    request.continuation.resume(throwing: CancellationError())
+  }
+
+  private func timeoutPendingRequest(id: Int, method: String) {
+    guard let request = pending.removeValue(forKey: id) else { return }
+    request.continuation.resume(throwing: CodexTrackerError.requestTimedOut(method))
+  }
+
   private func sendNotification<Params: Encodable>(method: String, params: Params) throws {
     let message = RPCRequest(method: method, id: nil, params: params)
     var data = try JSONEncoder().encode(message)
     data.append(0x0A)
-    try inputPipe?.fileHandleForWriting.write(contentsOf: data)
+    guard let writer = inputPipe?.fileHandleForWriting else {
+      throw CodexTrackerError.serverExited("Input pipe is unavailable")
+    }
+    try writer.write(contentsOf: data)
   }
 
   private func receiveOutput(_ data: Data) {
-    outputBuffer.append(data)
-    while let newline = outputBuffer.firstIndex(of: 0x0A) {
-      let line = Data(outputBuffer[..<newline])
-      outputBuffer.removeSubrange(...newline)
-      guard !line.isEmpty else { continue }
-      route(line)
-    }
+    for line in outputBuffer.append(data) { route(line) }
   }
 
   private func receiveError(_ data: Data) {
     errorBuffer.append(data)
-    if errorBuffer.count > 8_192 {
-      errorBuffer = Data(errorBuffer.suffix(8_192))
-    }
+    if errorBuffer.count > 8_192 { errorBuffer = Data(errorBuffer.suffix(8_192)) }
   }
 
   private func route(_ line: Data) {
     guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else {
       return
     }
-    if let id = object["id"] as? Int, let continuation = pending.removeValue(forKey: id) {
-      continuation.resume(returning: line)
+    if Self.isResponse(object), let id = object["id"] as? Int,
+      let request = pending.removeValue(forKey: id)
+    {
+      request.timeoutTask.cancel()
+      request.continuation.resume(returning: line)
       return
     }
     guard object["method"] as? String == "account/rateLimits/updated",
@@ -253,40 +425,101 @@ actor CodexAppServerClient {
     rateLimitHandler?(notification.params.rateLimits)
   }
 
-  private func processTerminated(status: Int32) {
-    guard !intentionallyStopping else { return }
+  nonisolated static func isResponse(_ object: [String: Any]) -> Bool {
+    object["method"] == nil && (object["result"] != nil || object["error"] != nil)
+  }
+
+  private func processTerminated(identity: ObjectIdentifier, status: Int32) {
+    guard processIdentity == identity else { return }
+    outputPipe?.fileHandleForReading.readabilityHandler = nil
+    errorPipe?.fileHandleForReading.readabilityHandler = nil
+    outputContinuation?.finish()
+    errorContinuation?.finish()
+    outputReaderTask?.cancel()
+    errorReaderTask?.cancel()
+
+    guard !intentionallyStopping else {
+      clearConnectionReferences()
+      return
+    }
     let detail =
       String(data: errorBuffer, encoding: .utf8)?
       .trimmingCharacters(in: .whitespacesAndNewlines) ?? "exit \(status)"
     failPending(with: CodexTrackerError.serverExited(detail))
+    clearConnectionReferences()
+  }
+
+  private func tearDownConnection(error: Error, terminate: Bool) {
+    outputPipe?.fileHandleForReading.readabilityHandler = nil
+    errorPipe?.fileHandleForReading.readabilityHandler = nil
+    outputContinuation?.finish()
+    errorContinuation?.finish()
+    outputReaderTask?.cancel()
+    errorReaderTask?.cancel()
+    inputPipe?.fileHandleForWriting.closeFile()
+    if terminate, process?.isRunning == true { process?.terminate() }
+    failPending(with: error)
+    clearConnectionReferences()
+  }
+
+  private func clearConnectionReferences() {
+    isInitialized = false
     process = nil
+    processIdentity = nil
+    inputPipe = nil
+    outputPipe = nil
+    errorPipe = nil
+    outputContinuation = nil
+    errorContinuation = nil
+    outputReaderTask = nil
+    errorReaderTask = nil
   }
 
   private func failPending(with error: Error) {
-    let continuations = pending.values
+    let requests = pending.values
     pending.removeAll()
-    for continuation in continuations {
-      continuation.resume(throwing: error)
+    for request in requests {
+      request.timeoutTask.cancel()
+      request.continuation.resume(throwing: error)
     }
   }
 
   nonisolated static func resolveCodexExecutable(
     environment: [String: String] = ProcessInfo.processInfo.environment
   ) -> URL? {
-    var candidates: [String] = []
+    let home = FileManager.default.homeDirectoryForCurrentUser.path
+    var candidates = [
+      "/opt/homebrew/bin/codex",
+      "/usr/local/bin/codex",
+      "/Applications/Codex.app/Contents/Resources/codex",
+      home + "/.local/bin/codex",
+      home + "/.npm-global/bin/codex",
+      home + "/.bun/bin/codex",
+      home + "/.volta/bin/codex",
+      home + "/.local/share/mise/shims/codex",
+      home + "/.asdf/shims/codex",
+    ]
+    let nvmRoot = URL(fileURLWithPath: home + "/.nvm/versions/node", isDirectory: true)
+    if let versions = try? FileManager.default.contentsOfDirectory(
+      at: nvmRoot, includingPropertiesForKeys: nil)
+    {
+      candidates += versions.map { $0.appendingPathComponent("bin/codex").path }.sorted().reversed()
+    }
     if let path = environment["PATH"] {
       candidates += path.split(separator: ":").map { String($0) + "/codex" }
     }
-    let home = FileManager.default.homeDirectoryForCurrentUser.path
-    candidates += [
-      "/opt/homebrew/bin/codex",
-      "/usr/local/bin/codex",
-      home + "/.local/bin/codex",
-      home + "/.npm-global/bin/codex",
-      "/Applications/Codex.app/Contents/Resources/codex",
-    ]
     guard let path = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
     else { return nil }
     return URL(fileURLWithPath: path)
+  }
+
+  nonisolated static func normalizedCodexHome(_ value: String?) -> String? {
+    guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty
+    else { return nil }
+    return standardizedPath((value as NSString).expandingTildeInPath)
+  }
+
+  nonisolated private static func standardizedPath(_ value: String) -> String {
+    URL(fileURLWithPath: value).standardizedFileURL.resolvingSymlinksInPath().path
   }
 }

@@ -1,10 +1,10 @@
 # Releasing
 
-Release publishing is intentionally not wired to an upstream account. Configure these items after the project has its own repository and Apple developer identity.
+Release publishing is intentionally disabled until the project has an Apple developer identity.
 
 ## One-time setup
 
-1. Change `PRODUCT_BUNDLE_IDENTIFIER` if `com.iugo.CodexUsageTracker` is not appropriate.
+1. Keep the registered bundle identifier aligned with `com.agend.CodexUsageTracker`.
 2. Select the release team and Developer ID Application certificate in Xcode.
 3. Add repository secrets for signing and notarization only if automated releases are required.
 4. Decide on a trusted update channel before adding an updater dependency or feed URL.

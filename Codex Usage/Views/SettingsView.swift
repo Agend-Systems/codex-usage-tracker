@@ -27,6 +27,10 @@ struct SettingsView: View {
   @ObservedObject private var store = UsageStore.shared
   @ObservedObject private var history = HistoryStore.shared
   @State private var selection: SettingsPage? = .accounts
+  @State private var pendingDeletion: CodexProfile?
+  @State private var launcherInstalled = false
+  @State private var presentedError: String?
+  @State private var showingClearCacheConfirmation = false
 
   var body: some View {
     NavigationSplitView {
@@ -52,6 +56,41 @@ struct SettingsView: View {
       .background(.ultraThinMaterial)
     }
     .frame(minWidth: 820, minHeight: 570)
+    .confirmationDialog(
+      deletionTitle,
+      isPresented: Binding(
+        get: { pendingDeletion != nil },
+        set: { if !$0 { pendingDeletion = nil } }
+      ),
+      titleVisibility: .visible
+    ) {
+      Button("Remove profile and history", role: .destructive) {
+        guard let profile = pendingDeletion else { return }
+        preferences.delete(profile)
+        Task { await store.remove(profile) }
+        pendingDeletion = nil
+      }
+      Button("Export CSV first…") {
+        guard let profile = pendingDeletion else { return }
+        do { try history.exportCSV(profileID: profile.id) } catch {
+          presentedError = error.localizedDescription
+        }
+      }
+      Button("Cancel", role: .cancel) { pendingDeletion = nil }
+    } message: {
+      Text("This permanently deletes the profile and its locally stored usage history.")
+    }
+    .alert("Action failed", isPresented: errorPresented) {
+      Button("OK", role: .cancel) { presentedError = nil }
+    } message: {
+      Text(presentedError ?? "The action could not be completed.")
+    }
+    .alert("Clear cached data?", isPresented: $showingClearCacheConfirmation) {
+      Button("Cancel", role: .cancel) {}
+      Button("Clear cached data", role: .destructive) { store.clearCachedData() }
+    } message: {
+      Text("This removes cached account details, usage snapshots, history, and notification state.")
+    }
   }
 
   private func pageHeader(_ page: SettingsPage) -> some View {
@@ -88,7 +127,8 @@ struct SettingsView: View {
                 HStack {
                   StatusDot(
                     color: (store.states[profile.id] ?? .idle) == .connected
-                      ? TrackerDesign.green : .secondary)
+                      ? TrackerDesign.green : .secondary,
+                    label: (store.states[profile.id] ?? .idle).label)
                   Text(profile.name)
                   Spacer()
                   if profile.id == preferences.activeProfileID { Image(systemName: "checkmark") }
@@ -104,9 +144,7 @@ struct SettingsView: View {
             HStack {
               Button("Add", systemImage: "plus") { preferences.addProfile() }
               Button(role: .destructive) {
-                let profile = preferences.activeProfile
-                preferences.delete(profile)
-                Task { await store.remove(profile) }
+                pendingDeletion = preferences.activeProfile
               } label: {
                 Label("Remove", systemImage: "minus")
               }
@@ -156,22 +194,34 @@ struct SettingsView: View {
     VStack(alignment: .leading, spacing: 8) {
       Text("Terminal launcher").font(.headline)
       Text(
-        "Install `codex-\(TerminalLauncherService.slug(for: profile.name))` in ~/.local/bin for this account."
+        "Install `\(TerminalLauncherService.launcherURL(for: profile).lastPathComponent)` in ~/.local/bin for this account."
       )
       .font(.caption).foregroundStyle(.secondary)
+      Text("Make sure ~/.local/bin is included in your shell’s PATH.")
+        .font(.caption).foregroundStyle(.secondary)
       HStack {
-        Button(
-          TerminalLauncherService.isInstalled(for: profile)
-            ? "Reinstall launcher" : "Install launcher"
-        ) {
-          _ = try? TerminalLauncherService.install(for: profile)
+        Button(launcherInstalled ? "Reinstall launcher" : "Install launcher") {
+          do {
+            _ = try TerminalLauncherService.install(for: profile)
+            launcherInstalled = true
+          } catch {
+            presentedError = error.localizedDescription
+          }
         }
-        if TerminalLauncherService.isInstalled(for: profile) {
+        if launcherInstalled {
           Button("Remove", role: .destructive) {
-            try? TerminalLauncherService.uninstall(for: profile)
+            do {
+              try TerminalLauncherService.uninstall(for: profile)
+              launcherInstalled = false
+            } catch {
+              presentedError = error.localizedDescription
+            }
           }
         }
       }
+    }
+    .task(id: profile.id) {
+      launcherInstalled = TerminalLauncherService.isInstalled(for: profile)
     }
   }
 
@@ -194,6 +244,15 @@ struct SettingsView: View {
           Text("15 minutes").tag(TimeInterval(900))
         }
         Toggle("Launch at login", isOn: $preferences.launchAtLogin)
+        if let error = preferences.launchAtLoginError {
+          Label(error, systemImage: "exclamationmark.triangle.fill")
+            .font(.caption)
+            .foregroundStyle(TrackerDesign.red)
+          Link(
+            "Open Login Items settings",
+            destination: URL(
+              string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension")!)
+        }
       }
     }
   }
@@ -252,7 +311,9 @@ struct SettingsView: View {
           .frame(height: 280)
         }
         Button("Export CSV…", systemImage: "square.and.arrow.up") {
-          history.exportCSV(profileID: preferences.activeProfileID)
+          do { try history.exportCSV(profileID: preferences.activeProfileID) } catch {
+            presentedError = error.localizedDescription
+          }
         }
         .disabled(points.isEmpty)
       }
@@ -302,6 +363,10 @@ struct SettingsView: View {
         Link(
           "Codex app-server documentation",
           destination: URL(string: "https://developers.openai.com/codex/app-server/")!)
+        Divider()
+        Button("Clear cached data…", role: .destructive) {
+          showingClearCacheConfirmation = true
+        }
       }
     }
   }
@@ -340,5 +405,17 @@ struct SettingsView: View {
         value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : value
       preferences.update(profile)
     }
+  }
+
+  private var deletionTitle: String {
+    guard let pendingDeletion else { return "Remove profile?" }
+    let count = history.points(for: pendingDeletion.id).count
+    return "Remove “\(pendingDeletion.name)” and \(count) history point\(count == 1 ? "" : "s")?"
+  }
+
+  private var errorPresented: Binding<Bool> {
+    Binding(
+      get: { presentedError != nil },
+      set: { if !$0 { presentedError = nil } })
   }
 }
