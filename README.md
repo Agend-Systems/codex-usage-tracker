@@ -29,12 +29,30 @@ The app looks for `codex` in the process `PATH`, Homebrew locations, `~/.local/b
 
 ## Install
 
-Download `Codex Usage.app.zip` and its checksum from the latest [GitHub Release](https://github.com/Agend-Systems/codex-usage-tracker/releases/latest). Verify the download, then unzip the app and move it to Applications:
+### Homebrew
+
+Install Codex Usage from the Agend Systems tap:
 
 ```sh
-shasum -a 256 "Codex Usage.app.zip"
-# Compare this output with Codex Usage.app.zip.sha256 from the same release.
-unzip "Codex Usage.app.zip"
+brew tap Agend-Systems/tap
+brew install --cask Agend-Systems/tap/codex-usage
+```
+
+Install future releases with:
+
+```sh
+brew update
+brew upgrade --cask codex-usage
+```
+
+### Manual installation
+
+Download `Codex.Usage.app.zip` and its checksum from the latest [GitHub Release](https://github.com/Agend-Systems/codex-usage-tracker/releases/latest). Verify the download, then unzip the app and move it to Applications:
+
+```sh
+shasum -a 256 "Codex.Usage.app.zip"
+# Compare this output with Codex.Usage.app.zip.sha256 from the same release.
+unzip "Codex.Usage.app.zip"
 mv "Codex Usage.app" /Applications/
 ```
 
