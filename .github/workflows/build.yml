@@ -73,6 +73,7 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: >-
           gh release create "${{ github.ref_name }}"
           "Codex Usage.app.zip" "Codex Usage.app.zip.sha256"

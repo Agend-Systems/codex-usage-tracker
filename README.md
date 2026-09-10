@@ -38,7 +38,7 @@ unzip "Codex Usage.app.zip"
 mv "Codex Usage.app" /Applications/
 ```
 
-Release builds are currently unsigned. On first launch, Control-click **Codex Usage.app**, choose **Open**, then confirm the macOS prompt. Later releases use the normal double-click launch flow.
+Release builds are currently unsigned. On first launch, Control-click **Codex Usage.app**, choose **Open**, then confirm the macOS prompt. Later launches of that app use the normal double-click flow.
 
 ## Build and run
 
