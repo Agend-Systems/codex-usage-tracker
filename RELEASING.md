@@ -1,6 +1,6 @@
 # Releasing
 
-Pushing a tag that starts with `v` publishes an unsigned GitHub Release. The workflow builds and tests the app, then uploads `Codex Usage.app.zip` and `Codex Usage.app.zip.sha256`.
+Every CI run uploads an unsigned app artifact for seven days. Pushing a tag that starts with `v` also publishes that artifact as a GitHub Release. Both contain `Codex Usage.app.zip` and `Codex Usage.app.zip.sha256`.
 
 Unsigned releases require users to Control-click the app and choose **Open** the first time. Add Developer ID signing and notarization before representing releases as fully trusted macOS distributions.
 

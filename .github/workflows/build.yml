@@ -44,14 +44,12 @@ jobs:
           CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
           SWIFT_STRICT_CONCURRENCY=complete build
       - name: Package release artifact
-        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           app_path="$RUNNER_TEMP/codex-usage-release/Build/Products/Release/Codex Usage.app"
           test -d "$app_path"
           ditto -c -k --sequesterRsrc --keepParent "$app_path" "Codex Usage.app.zip"
           shasum -a 256 "Codex Usage.app.zip" > "Codex Usage.app.zip.sha256"
       - name: Upload release artifact
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
         with:
           name: codex-usage-${{ github.ref_name }}
@@ -59,6 +57,7 @@ jobs:
             Codex Usage.app.zip
             Codex Usage.app.zip.sha256
           if-no-files-found: error
+          retention-days: 7
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
