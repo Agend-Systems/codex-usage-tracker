@@ -5,6 +5,7 @@ on:
     branches: [main]
   push:
     branches: [main]
+    tags: ['v*']
 
 permissions:
   contents: read
@@ -42,3 +43,38 @@ jobs:
           -configuration Release -derivedDataPath "$RUNNER_TEMP/codex-usage-release"
           CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
           SWIFT_STRICT_CONCURRENCY=complete build
+      - name: Package release artifact
+        run: |
+          app_path="$RUNNER_TEMP/codex-usage-release/Build/Products/Release/Codex Usage.app"
+          test -d "$app_path"
+          ditto -c -k --sequesterRsrc --keepParent "$app_path" "Codex Usage.app.zip"
+          shasum -a 256 "Codex Usage.app.zip" > "Codex Usage.app.zip.sha256"
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-usage-${{ github.run_id }}
+          path: |
+            Codex Usage.app.zip
+            Codex Usage.app.zip.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: macos
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download release artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: codex-usage-${{ github.run_id }}
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: >-
+          gh release create "${{ github.ref_name }}"
+          "Codex Usage.app.zip" "Codex Usage.app.zip.sha256"
+          --generate-notes --title "Codex Usage ${{ github.ref_name }}"
