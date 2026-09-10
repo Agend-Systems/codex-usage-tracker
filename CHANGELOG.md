@@ -2,6 +2,10 @@
 
 All notable changes to Codex Usage Tracker are documented here.
 
+## 0.1.1 — 2026-09-10
+
+- Bring the Settings window to the front when opened from the menu-bar popover.
+
 ## 0.1.0 — 2026-09-10
 
 - Rebuilt the upstream macOS utility as a Codex-only tracker.
