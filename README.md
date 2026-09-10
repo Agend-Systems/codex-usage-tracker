@@ -27,6 +27,19 @@ A polished, native macOS menu-bar companion for monitoring Codex usage without o
 
 The app looks for `codex` in the process `PATH`, Homebrew locations, `~/.local/bin`, `~/.npm-global/bin`, and the Codex macOS app bundle.
 
+## Install
+
+Download `Codex Usage.app.zip` and its checksum from the latest [GitHub Release](https://github.com/Agend-Systems/codex-usage-tracker/releases/latest). Verify the download, then unzip the app and move it to Applications:
+
+```sh
+shasum -a 256 "Codex Usage.app.zip"
+# Compare this output with Codex Usage.app.zip.sha256 from the same release.
+unzip "Codex Usage.app.zip"
+mv "Codex Usage.app" /Applications/
+```
+
+Release builds are currently unsigned. On first launch, Control-click **Codex Usage.app**, choose **Open**, then confirm the macOS prompt. Later releases use the normal double-click launch flow.
+
 ## Build and run
 
 ```sh
