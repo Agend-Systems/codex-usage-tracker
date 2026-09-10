@@ -2,6 +2,7 @@ import Charts
 import SwiftUI
 
 struct PopoverView: View {
+  @Environment(\.openSettings) private var openSettings
   @ObservedObject private var preferences = TrackerPreferences.shared
   @ObservedObject private var store = UsageStore.shared
   @State private var creditToRedeem: ResetCredit?
@@ -101,7 +102,7 @@ struct PopoverView: View {
       .buttonStyle(.plain)
       .help("Refresh")
       .accessibilityLabel("Refresh usage")
-      SettingsLink {
+      Button(action: showSettings) {
         Image(systemName: "gearshape.fill")
       }
       .buttonStyle(.plain)
@@ -311,7 +312,7 @@ struct PopoverView: View {
         Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
         HStack {
           Button("Try again") { Task { await store.reconnect(profile) } }
-          SettingsLink { Text("Open settings") }
+          Button("Open settings", action: showSettings)
         }
       }
     }
@@ -342,6 +343,16 @@ struct PopoverView: View {
     }
     .font(.caption2)
     .foregroundStyle(.tertiary)
+  }
+
+  private func showSettings() {
+    openSettings()
+    DispatchQueue.main.async {
+      NSApplication.shared.activate(ignoringOtherApps: true)
+      NSApplication.shared.windows
+        .first { $0.title == "Codex Usage Settings" }?
+        .makeKeyAndOrderFront(nil)
+    }
   }
 
   private func duration(_ seconds: Int) -> String {
