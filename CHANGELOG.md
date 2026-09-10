@@ -2,7 +2,7 @@
 
 All notable changes to Codex Usage Tracker are documented here.
 
-## 0.1.0 — Unreleased
+## 0.1.0 — 2026-09-10
 
 - Rebuilt the upstream macOS utility as a Codex-only tracker.
 - Added documented Codex app-server account, rate-limit, token-usage, and live-update integration.
