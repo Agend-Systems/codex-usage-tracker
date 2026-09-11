@@ -229,11 +229,19 @@ jobs:
           )
           test -s "$embedded_certificate_directory/codesign0"
           test -s "$embedded_certificate_directory/codesign1"
-          embedded_intermediate_sha="$(shasum -a 256 "$embedded_certificate_directory/codesign1" | awk '{ print $1 }')"
-          if [[ "$embedded_intermediate_sha" != "f16cd3c54c7f83cea4bf1a3e6a0819c8aaa8e4a1528fd144715f350643d2df3a" ]]; then
-            echo "The signed app does not contain Apple's expected Developer ID G2 intermediate." >&2
+          embedded_intermediate_subject="$(openssl x509 \
+            -inform DER \
+            -in "$embedded_certificate_directory/codesign1" \
+            -noout \
+            -subject)"
+          if [[ "$embedded_intermediate_subject" != *"Developer ID Certification Authority"* ]]; then
+            echo "The signed app does not contain an Apple Developer ID intermediate." >&2
             exit 1
           fi
+          security verify-cert \
+            -c "$embedded_certificate_directory/codesign0" \
+            -c "$embedded_certificate_directory/codesign1" \
+            -p codeSign
       - name: Notarize and staple app
         if: steps.release.outputs.publish == 'true'
         env:
