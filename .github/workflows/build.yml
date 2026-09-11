@@ -172,14 +172,15 @@ jobs:
           security create-keychain -p "$keychain_password" "$keychain_path"
           security set-keychain-settings -lut 21600 "$keychain_path"
           security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
           security import "$certificate_path" \
             -k "$keychain_path" \
             -P "$MACOS_CERTIFICATE_PASSWORD" \
-            -A \
+            -T /usr/bin/codesign \
             -t cert \
             -f pkcs12
           security set-key-partition-list \
-            -S apple-tool:,apple: \
+            -S apple-tool:,apple:,codesign: \
             -s \
             -k "$keychain_password" \
             "$keychain_path"
@@ -191,7 +192,6 @@ jobs:
             exit 1
           fi
           echo "SIGNING_IDENTITY=$signing_identity" >> "$GITHUB_ENV"
-          echo "SIGNING_KEYCHAIN=$keychain_path" >> "$GITHUB_ENV"
       - name: Sign app with Developer ID
         if: steps.release.outputs.publish == 'true'
         run: |
@@ -205,7 +205,6 @@ jobs:
             --timestamp \
             --entitlements "Codex Usage/CodexUsageTracker.entitlements" \
             --sign "$SIGNING_IDENTITY" \
-            --keychain "$SIGNING_KEYCHAIN" \
             "$app_path"
           codesign --verify --deep --strict --verbose=2 "$app_path"
       - name: Notarize and staple app
