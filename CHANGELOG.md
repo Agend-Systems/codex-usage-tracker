@@ -2,9 +2,14 @@
 
 All notable changes to Codex Usage Tracker are documented here.
 
+## 0.1.3 — 2026-09-11
+
+- Embed Apple's complete Developer ID certificate chain in release signatures.
+- Verify the packaged release after a clean extraction before publishing it.
+
 ## 0.1.2 — 2026-09-11
 
-- Sign and notarize releases so macOS can verify the downloaded app and open it normally.
+- Introduced signed and notarized releases; superseded by 0.1.3 because the packaged signature omitted Apple's Developer ID intermediate certificate.
 
 ## 0.1.1 — 2026-09-10
 
