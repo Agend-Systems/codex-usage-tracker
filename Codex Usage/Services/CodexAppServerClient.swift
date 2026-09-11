@@ -242,7 +242,7 @@ actor CodexAppServerClient {
     process.standardOutput = output
     process.standardError = errors
 
-    var environment = ProcessInfo.processInfo.environment
+    var environment = Self.processEnvironment(for: executable)
     let requestedHome = Self.normalizedCodexHome(codexHome)
     if let requestedHome { environment["CODEX_HOME"] = requestedHome }
     process.environment = environment
@@ -576,6 +576,20 @@ actor CodexAppServerClient {
     guard let path = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
     else { return nil }
     return URL(fileURLWithPath: path)
+  }
+
+  nonisolated static func processEnvironment(
+    for executable: URL,
+    inheriting environment: [String: String] = ProcessInfo.processInfo.environment
+  ) -> [String: String] {
+    var environment = environment
+    let executableDirectory = executable.deletingLastPathComponent().path
+    let inheritedDirectories =
+      environment["PATH"]?.split(separator: ":").map(String.init) ?? []
+    let searchDirectories =
+      [executableDirectory] + inheritedDirectories.filter { $0 != executableDirectory }
+    environment["PATH"] = searchDirectories.joined(separator: ":")
+    return environment
   }
 
   nonisolated static func normalizedCodexHome(_ value: String?) -> String? {
