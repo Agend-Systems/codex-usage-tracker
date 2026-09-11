@@ -2,6 +2,10 @@
 
 All notable changes to Codex Usage Tracker are documented here.
 
+## 0.1.2 — 2026-09-11
+
+- Sign and notarize releases so macOS can verify the downloaded app and open it normally.
+
 ## 0.1.1 — 2026-09-10
 
 - Bring the Settings window to the front when opened from the menu-bar popover.
