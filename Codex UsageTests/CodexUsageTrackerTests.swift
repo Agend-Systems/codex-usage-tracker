@@ -166,6 +166,15 @@ final class CodexUsageTrackerTests: XCTestCase {
     XCTAssertEqual(versions, ["v20.1.0", "v10.12.0", "v9.0.0"])
   }
 
+  func testCodexProcessEnvironmentFindsDependenciesBesideExecutable() {
+    let environment = CodexAppServerClient.processEnvironment(
+      for: URL(fileURLWithPath: "/opt/homebrew/bin/codex"),
+      inheriting: ["PATH": "/usr/bin:/bin", "LANG": "en_AU.UTF-8"])
+
+    XCTAssertEqual(environment["PATH"], "/opt/homebrew/bin:/usr/bin:/bin")
+    XCTAssertEqual(environment["LANG"], "en_AU.UTF-8")
+  }
+
   func testMapKeysProvideStableBucketIdentity() throws {
     let data = Data(
       #"""
