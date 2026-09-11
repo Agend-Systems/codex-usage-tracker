@@ -4,7 +4,24 @@
   <img src="Codex%20Usage/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" width="128" alt="Codex Usage Tracker icon">
 </p>
 
-A polished, native macOS menu-bar companion for monitoring Codex usage without opening a dashboard. It talks only to the locally installed Codex CLI through the documented app-server protocol; it never reads, copies, or stores your authentication tokens.
+<p align="center">
+  <a href="https://github.com/Agend-Systems/codex-usage-tracker/releases/latest"><img src="https://img.shields.io/github/v/release/Agend-Systems/codex-usage-tracker?label=release" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/macOS-14%2B-black?logo=apple" alt="macOS 14 or newer">
+  <img src="https://img.shields.io/badge/Swift-5-orange?logo=swift" alt="Swift 5">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
+</p>
+
+See your Codex limits, reset times, and usage history without leaving the macOS menu bar. Codex Usage Tracker is a native, signed and notarized app with multiple-profile support and no credential access.
+
+It communicates only with the locally installed Codex CLI through the documented app-server protocol. Authentication remains managed by Codex: the app never reads, copies, or stores your tokens.
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/popover.png" width="31%" alt="Codex Usage menu-bar panel showing session usage and token activity">
+  &nbsp;
+  <img src="docs/screenshots/settings.png" width="64%" alt="Codex Usage account settings with multiple-profile support">
+</p>
 
 ## Highlights
 
@@ -61,7 +78,7 @@ Releases from version 0.1.3 are Developer ID signed and notarized by Apple, so t
 ## Build and run
 
 ```sh
-git clone <your-repository-url>
+git clone https://github.com/Agend-Systems/codex-usage-tracker.git
 cd codex-usage-tracker
 open "Codex Usage.xcodeproj"
 ```
