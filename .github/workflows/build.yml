@@ -165,14 +165,27 @@ jobs:
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
         run: |
           certificate_path="$RUNNER_TEMP/developer-id-application.p12"
+          intermediate_certificate_path="$RUNNER_TEMP/DeveloperIDG2CA.cer"
           keychain_path="$RUNNER_TEMP/codex-usage-signing.keychain-db"
           keychain_password="$(openssl rand -hex 32)"
 
           printf '%s' "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$certificate_path"
+          curl --fail --location --silent --show-error \
+            https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer \
+            --output "$intermediate_certificate_path"
+          intermediate_certificate_sha="$(shasum -a 256 "$intermediate_certificate_path" | awk '{ print $1 }')"
+          if [[ "$intermediate_certificate_sha" != "f16cd3c54c7f83cea4bf1a3e6a0819c8aaa8e4a1528fd144715f350643d2df3a" ]]; then
+            echo "Apple Developer ID G2 intermediate certificate checksum mismatch." >&2
+            exit 1
+          fi
+
           security create-keychain -p "$keychain_password" "$keychain_path"
           security set-keychain-settings -lut 21600 "$keychain_path"
           security unlock-keychain -p "$keychain_password" "$keychain_path"
           security list-keychains -d user -s "$keychain_path"
+          security import "$intermediate_certificate_path" \
+            -k "$keychain_path" \
+            -T /usr/bin/codesign
           security import "$certificate_path" \
             -k "$keychain_path" \
             -P "$MACOS_CERTIFICATE_PASSWORD" \
@@ -207,6 +220,20 @@ jobs:
             --sign "$SIGNING_IDENTITY" \
             "$app_path"
           codesign --verify --deep --strict --verbose=2 "$app_path"
+
+          embedded_certificate_directory="$RUNNER_TEMP/embedded-certificates"
+          mkdir -p "$embedded_certificate_directory"
+          (
+            cd "$embedded_certificate_directory"
+            codesign --display --extract-certificates "$app_path"
+          )
+          test -s "$embedded_certificate_directory/codesign0"
+          test -s "$embedded_certificate_directory/codesign1"
+          embedded_intermediate_sha="$(shasum -a 256 "$embedded_certificate_directory/codesign1" | awk '{ print $1 }')"
+          if [[ "$embedded_intermediate_sha" != "f16cd3c54c7f83cea4bf1a3e6a0819c8aaa8e4a1528fd144715f350643d2df3a" ]]; then
+            echo "The signed app does not contain Apple's expected Developer ID G2 intermediate." >&2
+            exit 1
+          fi
       - name: Notarize and staple app
         if: steps.release.outputs.publish == 'true'
         env:
@@ -233,8 +260,17 @@ jobs:
         if: steps.release.outputs.publish == 'true'
         run: |
           app_path="$RUNNER_TEMP/signed-app/Codex Usage.app"
-          ditto -c -k --sequesterRsrc --keepParent "$app_path" "Codex Usage.app.zip"
-          shasum -a 256 "Codex Usage.app.zip" > "Codex Usage.app.zip.sha256"
+          release_archive="Codex.Usage.app.zip"
+          verification_directory="$RUNNER_TEMP/release-verification"
+
+          ditto -c -k --sequesterRsrc --keepParent "$app_path" "$release_archive"
+          mkdir -p "$verification_directory"
+          ditto -x -k "$release_archive" "$verification_directory"
+          verified_app_path="$verification_directory/Codex Usage.app"
+          codesign --verify --deep --strict --verbose=2 "$verified_app_path"
+          xcrun stapler validate "$verified_app_path"
+          spctl --assess --type execute --verbose=4 "$verified_app_path"
+          shasum -a 256 "$release_archive" > "${release_archive}.sha256"
       - name: Create annotated version tag
         if: steps.release.outputs.create_tag == 'true'
         env:
@@ -259,7 +295,7 @@ jobs:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: >-
           gh release create "$RELEASE_TAG"
-          "Codex Usage.app.zip" "Codex Usage.app.zip.sha256"
+          "Codex.Usage.app.zip" "Codex.Usage.app.zip.sha256"
           --generate-notes --title "Codex Usage $RELEASE_TAG"
       - name: Remove signing credentials
         if: always() && steps.release.outputs.publish == 'true'
@@ -269,4 +305,5 @@ jobs:
           security delete-keychain "$RUNNER_TEMP/codex-usage-signing.keychain-db" 2>/dev/null || true
           rm -f \
             "$RUNNER_TEMP/developer-id-application.p12" \
+            "$RUNNER_TEMP/DeveloperIDG2CA.cer" \
             "$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"

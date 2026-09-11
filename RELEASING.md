@@ -1,6 +1,6 @@
 # Releasing
 
-Every CI run uploads an unsigned app artifact for seven days. After a pull request is merged, the push to `main` runs the same checks and Release build. If the built app's `MARKETING_VERSION` does not already have a GitHub Release, the workflow signs and notarizes the app, creates an annotated `v<MARKETING_VERSION>` tag on that commit, and publishes the release automatically. Releases contain the notarized `Codex Usage.app.zip` and `Codex Usage.app.zip.sha256`.
+Every CI run uploads an unsigned app artifact for seven days. After a pull request is merged, the push to `main` runs the same checks and Release build. If the built app's `MARKETING_VERSION` does not already have a GitHub Release, the workflow signs and notarizes the app, creates an annotated `v<MARKETING_VERSION>` tag on that commit, and publishes the release automatically. Releases contain the notarized `Codex.Usage.app.zip` and `Codex.Usage.app.zip.sha256`.
 
 Pushes that keep an already-released `MARKETING_VERSION` still build and test, but do not create a duplicate release. A manually pushed `v*` tag remains a recovery path; it must match the version embedded in the built app.
 
@@ -22,7 +22,7 @@ Create an App Store Connect API key that can access the Apple notary service and
 
 Set secrets through GitHub's repository settings or `gh secret set`; never paste certificate or API-key contents into an issue, pull request, commit, or workflow file. Base64 is only an encoding—the GitHub secret is what protects the value.
 
-The Release configuration already enables the hardened runtime and uses `Codex Usage/CodexUsageTracker.entitlements`. Following [Apple's command-line notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow), the workflow imports the certificate into a temporary keychain, signs with a secure timestamp, submits the signed ZIP using `notarytool`, staples the accepted ticket, verifies it with `codesign`, `stapler`, and Gatekeeper, and only then creates the tag and GitHub Release. The temporary credential files and keychain are removed even when the job fails.
+The Release configuration already enables the hardened runtime and uses `Codex Usage/CodexUsageTracker.entitlements`. Following [Apple's command-line notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow), the workflow imports the certificate and Apple's checksum-pinned Developer ID G2 intermediate into a temporary keychain, signs with a secure timestamp, submits the signed ZIP using `notarytool`, staples the accepted ticket, verifies a freshly extracted copy with `codesign`, `stapler`, and Gatekeeper, and only then creates the tag and GitHub Release. The temporary credential files and keychain are removed even when the job fails.
 
 ## Release checklist
 
@@ -30,7 +30,7 @@ The Release configuration already enables the hardened runtime and uses `Codex U
 2. Move the relevant entries in `CHANGELOG.md` from Unreleased to a dated release.
 3. Run the Debug and Release builds plus tests.
 4. Merge the pull request into `main`. The successful workflow creates the annotated version tag and GitHub Release.
-5. Confirm the release contains `Codex Usage.app.zip` and `Codex Usage.app.zip.sha256`.
+5. Confirm the release contains `Codex.Usage.app.zip` and `Codex.Usage.app.zip.sha256`.
 6. Update the Homebrew cask to the new version and artifact checksum.
 7. Verify the app on a clean macOS account with a current Codex CLI.
 8. Confirm the release job passed its signing, notarization, stapling, and Gatekeeper checks.
