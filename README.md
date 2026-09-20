@@ -1,4 +1,4 @@
-# Codex Usage Tracker
+# Codex Usage Tracker for macOS
 
 <p align="center">
   <img src="Codex%20Usage/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" width="128" alt="Codex Usage Tracker icon">
@@ -11,9 +11,13 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
 
-See your Codex limits, reset times, and usage history without leaving the macOS menu bar. Codex Usage Tracker is a native, signed and notarized app with multiple-profile support and no credential access.
+Codex Usage Tracker is a free, open-source macOS menu bar app for monitoring **OpenAI Codex usage limits, remaining usage, reset times, and token activity**. Check your session and weekly usage, switch between Codex account profiles, and receive usage notifications without leaving the menu bar.
 
-It communicates only with the locally installed Codex CLI through the documented app-server protocol. Authentication remains managed by Codex: the app never reads, copies, or stores your tokens.
+Built with SwiftUI for macOS 14 Sonoma and newer, the app is distributed as a signed and notarized download or a Homebrew cask. It reads account and usage information through the locally installed Codex CLI's documented app-server protocol. Authentication remains managed by Codex: the tracker never reads, copies, or stores your authentication tokens.
+
+**[Website](https://agend-systems.github.io/codex-usage-tracker/)** · **[Install with Homebrew](#homebrew)** · **[Download the latest release](https://github.com/Agend-Systems/codex-usage-tracker/releases/latest)** · **[Frequently asked questions](#frequently-asked-questions)** · **[Privacy and security](SECURITY.md)**
+
+Codex Usage Tracker is independent software and is not affiliated with or endorsed by OpenAI.
 
 ## Screenshots
 
@@ -25,9 +29,9 @@ It communicates only with the locally installed Codex CLI through the documented
 
 ## Highlights
 
-- Live session and weekly rolling-window usage, reset times, and plan information
+- Live Codex session and weekly rolling-window usage, reset times, and plan information
 - Account token activity with a 14-day chart, lifetime total, peak day, streak, and longest turn
-- Multiple Codex profiles through separate `CODEX_HOME` directories
+- Multiple Codex account profiles through separate `CODEX_HOME` directories
 - Four compact menu-bar styles, including used or remaining percentage
 - Local 90-day usage history with CSV export
 - Configurable warning and critical notifications
@@ -44,7 +48,7 @@ It communicates only with the locally installed Codex CLI through the documented
 
 The app looks for `codex` in the process `PATH`, Homebrew locations, `~/.local/bin`, `~/.npm-global/bin`, and the Codex macOS app bundle.
 
-## Install
+## Install Codex Usage Tracker
 
 ### Homebrew
 
@@ -75,6 +79,38 @@ mv "Codex Usage.app" /Applications/
 
 Releases from version 0.1.3 are Developer ID signed and notarized by Apple, so they open normally after download. For version 0.1.2 and earlier, Control-click **Codex Usage.app**, choose **Open**, then confirm the macOS prompt on first launch.
 
+## Frequently asked questions
+
+### How do I check my OpenAI Codex usage limits on a Mac?
+
+Install Codex Usage Tracker, make sure you are signed in to the Codex CLI with your ChatGPT account, and open **Codex Usage.app**. Click its menu bar item to see the usage windows, percentages, and reset times reported by Codex. You can display either used or remaining usage in the menu bar.
+
+### Does it show five-hour and weekly Codex limits?
+
+The tracker displays the rolling usage windows returned by Codex, including five-hour and weekly windows when they are provided for your account. Window lengths, limits, and reset times come from Codex rather than a fixed allowance built into the tracker. Some fields may be unavailable depending on your account and Codex CLI version.
+
+### Can I monitor multiple Codex accounts?
+
+Yes. Add profiles in **Settings → Accounts**, with each profile pointing to a separate `CODEX_HOME` directory. Each directory uses its own Codex-managed sign-in. The tracker also supports per-profile terminal launchers named `codex-<name>`.
+
+### Does it track token activity or OpenAI API billing?
+
+It shows account token activity returned by Codex, including a chart of up to 14 days and lifetime totals when available. It also keeps up to 90 days of local rate-limit history that you can export as CSV. It is a Codex account usage monitor, not an OpenAI API billing dashboard or a per-project cost calculator.
+
+### Does it read my credentials or send analytics?
+
+No. The tracker does not read passwords, API keys, authentication tokens, or Codex credential files, and it includes no analytics or telemetry. It communicates with a local Codex subprocess, which manages authentication and account requests. The tracker's only direct network request is to the public OpenAI service-status endpoint.
+
+Account details and usage snapshots are cached locally. You can remove cached data in **Settings → About → Clear cached data**. See [Privacy and security](SECURITY.md) for the full data-handling details.
+
+### Is Codex Usage Tracker free, and does it work on Windows or Linux?
+
+The tracker is free and open source under the [MIT license](LICENSE). It requires macOS 14 Sonoma or newer; Windows and Linux are not supported. Your Codex account's own access requirements and usage limits still apply.
+
+### Is this an official OpenAI app?
+
+No. Codex Usage Tracker is an independent project maintained by [Agend Systems](https://github.com/Agend-Systems), built on the documented Codex app-server interface. It is not affiliated with or endorsed by OpenAI.
+
 ## Build and run
 
 ```sh
@@ -104,6 +140,13 @@ The app sends the documented `initialize`, `account/read`, `account/rateLimits/r
 Profile settings, cached snapshots, and history are stored in the app's local preferences. Authentication stays entirely inside Codex. The only direct network request made by this app is the public OpenAI status endpoint.
 
 See the [Codex app-server documentation](https://developers.openai.com/codex/app-server/) for the protocol contract.
+
+## Support and contributing
+
+- [Report a bug or request a feature](https://github.com/Agend-Systems/codex-usage-tracker/issues)
+- [Read the changelog](CHANGELOG.md)
+- [Contribute to Codex Usage Tracker](CONTRIBUTING.md)
+- [Report a security vulnerability privately](SECURITY.md#reporting-a-vulnerability)
 
 ## Attribution
 
