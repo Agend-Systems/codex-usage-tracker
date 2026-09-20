@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Codex Usage Tracker — OpenAI Codex Usage Monitor for macOS</title>
+  <meta name="description" content="Free, open-source macOS menu bar app for OpenAI Codex usage limits, reset times, token activity, and multiple accounts. Install with Homebrew or download.">
+  <link rel="canonical" href="https://agend-systems.github.io/codex-usage-tracker/">
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="stylesheet" href="styles.css">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Codex Usage Tracker">
+  <meta property="og:title" content="Codex Usage Tracker for macOS">
+  <meta property="og:description" content="Keep OpenAI Codex usage limits, reset times, and token activity in your Mac’s menu bar. Free and open source.">
+  <meta property="og:url" content="https://agend-systems.github.io/codex-usage-tracker/">
+  <meta name="twitter:card" content="summary">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Codex Usage Tracker",
+    "alternateName": "Codex Usage",
+    "url": "https://agend-systems.github.io/codex-usage-tracker/",
+    "description": "A free, open-source macOS menu bar app for monitoring OpenAI Codex usage limits, reset times, token activity, and multiple account profiles.",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "macOS 14 or newer",
+    "softwareRequirements": "A recent Codex CLI installation and a ChatGPT account signed in through Codex",
+    "license": "https://github.com/Agend-Systems/codex-usage-tracker/blob/main/LICENSE",
+    "isAccessibleForFree": true,
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "downloadUrl": "https://github.com/Agend-Systems/codex-usage-tracker/releases/latest",
+    "sameAs": "https://github.com/Agend-Systems/codex-usage-tracker",
+    "screenshot": "https://agend-systems.github.io/codex-usage-tracker/screenshots/popover.png",
+    "author": { "@type": "Organization", "name": "Agend Systems", "url": "https://github.com/Agend-Systems" }
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header wrap">
+    <a class="brand" href="./" aria-label="Codex Usage Tracker home"><img src="icon.png" width="36" height="36" alt="">Codex Usage Tracker</a>
+    <nav aria-label="Main navigation"><a href="#install">Install</a><a href="#faq">FAQ</a><a href="https://github.com/Agend-Systems/codex-usage-tracker">GitHub <span aria-hidden="true">↗</span></a></nav>
+  </header>
+  <main id="main">
+    <section class="hero wrap" aria-labelledby="hero-heading">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> OPEN SOURCE · MADE FOR MAC</p>
+        <h1 id="hero-heading">Your Codex usage.<br><span>One glance away.</span></h1>
+        <p class="intro">Keep OpenAI Codex usage limits, reset times, and token activity in your Mac’s menu bar. Know what’s left before your next coding session.</p>
+        <div class="actions"><a class="button" href="https://github.com/Agend-Systems/codex-usage-tracker/releases/latest">Download for macOS <span aria-hidden="true">↓</span></a><a class="text-link" href="#install">Install with Homebrew <span aria-hidden="true">→</span></a></div>
+        <p class="requirements">Free · macOS 14+ · Signed &amp; notarized</p>
+        <div class="hero-note"><strong>Your credentials stay with Codex.</strong><br>No credential access. No analytics. No cloud sync.</div>
+      </div>
+      <figure class="hero-image"><img src="screenshots/popover.png" width="1015" height="1550" fetchpriority="high" alt="Codex Usage Tracker menu bar panel showing a rolling usage window, reset time, credits, and token activity"><figcaption>Actual app screenshot. Available data varies by account.</figcaption></figure>
+    </section>
+    <section class="features wrap" aria-label="Features">
+      <article><span class="feature-number">01 / LIMITS</span><h2>See what’s left.</h2><p>View session and weekly rolling windows, used or remaining percentages, and reset times. Set warning and critical usage notifications.</p></article>
+      <article><span class="feature-number">02 / ACTIVITY</span><h2>Follow your usage.</h2><p>See up to 14 days of token activity when Codex provides it. Keep 90 days of local rate-limit history and export it as CSV.</p></article>
+      <article><span class="feature-number">03 / ACCOUNTS</span><h2>Keep profiles handy.</h2><p>Switch between Codex account profiles, each with its own Codex home directory. Create a terminal launcher for each profile.</p></article>
+    </section>
+    <section class="install-section" id="install">
+      <div class="wrap install-grid">
+        <div><p class="eyebrow">GET STARTED</p><h2>A small app.<br>A clearer view.</h2><p>You’ll need macOS 14 Sonoma or newer, a recent <a href="https://developers.openai.com/codex/cli/">Codex CLI</a>, and a ChatGPT account signed in through Codex.</p><p>Install the app, open <strong>Codex Usage</strong>, then click its menu bar item. Add more profiles in Settings → Accounts.</p></div>
+        <div class="install-options"><h3>Install with Homebrew</h3><pre><code>brew tap Agend-Systems/tap
+brew install --cask Agend-Systems/tap/codex-usage</code></pre><p>Already installed? Run <code>brew update</code>, then <code>brew upgrade --cask codex-usage</code>.</p><h3>Prefer a direct download?</h3><p>Get <strong>Codex.Usage.app.zip</strong> and its checksum from the <a href="https://github.com/Agend-Systems/codex-usage-tracker/releases/latest">latest GitHub release</a>. Verify the checksum, unzip, and move the app to Applications.</p><a class="text-link" href="https://github.com/Agend-Systems/codex-usage-tracker#manual-installation">Full installation instructions <span aria-hidden="true">→</span></a></div>
+      </div>
+    </section>
+    <section class="privacy wrap">
+      <div><p class="eyebrow">LOCAL BY DESIGN</p><h2>Usage insights.<br>Without your credentials.</h2><p>Codex Usage Tracker reads account and usage information through a local Codex subprocess. Codex handles authentication and account requests; the tracker never reads passwords, API keys, or authentication tokens.</p><p>Account details and usage history are cached on your Mac. The tracker’s only direct network request is to the public OpenAI service-status endpoint.</p><a class="text-link" href="https://github.com/Agend-Systems/codex-usage-tracker/blob/main/SECURITY.md">Read the privacy and security details <span aria-hidden="true">→</span></a></div>
+      <figure><img src="screenshots/settings.png" width="968" height="726" loading="lazy" alt="Codex Usage Tracker settings for managing multiple account profiles"><figcaption>Manage your Codex profiles in one place.</figcaption></figure>
+    </section>
+    <section class="faq wrap" id="faq">
+      <p class="eyebrow">A FEW USEFUL ANSWERS</p><h2>About Codex Usage Tracker</h2>
+      <details open><summary>How do I check my OpenAI Codex usage on a Mac?</summary><p>Install Codex Usage Tracker and sign in to the Codex CLI with your ChatGPT account. Open the app, then click its menu bar item to see your account’s usage windows, remaining or used percentages, and reset times.</p></details>
+      <details><summary>Does it show five-hour and weekly Codex limits?</summary><p>It displays the rolling windows returned by Codex, including five-hour and weekly windows when your account provides them. Limits and window lengths come from Codex, rather than a fixed allowance in the tracker. Data availability depends on your account and Codex CLI version.</p></details>
+      <details><summary>Can I monitor multiple Codex accounts?</summary><p>Yes. Add profiles in Settings → Accounts and point each one to a separate <code>CODEX_HOME</code> directory. Each directory uses its own Codex-managed sign-in.</p></details>
+      <details><summary>Is this an OpenAI API cost or billing tracker?</summary><p>No. It monitors the usage limits and token activity exposed by your Codex account. It is not an OpenAI API billing dashboard or a per-project cost calculator.</p></details>
+      <details><summary>Is the app free? Does it work on Windows or Linux?</summary><p>Codex Usage Tracker is free and open source under the MIT license. It requires macOS 14 Sonoma or newer; Windows and Linux are not supported. Your Codex account’s own access requirements and usage limits still apply.</p></details>
+      <details><summary>Is this an official OpenAI app?</summary><p>No. This is independent software maintained by Agend Systems. It is not affiliated with or endorsed by OpenAI. The source code is available on GitHub.</p></details>
+    </section>
+  </main>
+  <footer class="wrap"><div><strong>Codex Usage Tracker</strong><p>Free and open source. Built with SwiftUI.</p><p class="attribution">A derivative of Hamed Elfayome’s <a href="https://github.com/hamed-elfayome/Claude-Usage-Tracker">Claude Usage Tracker</a>.<br>Independent software. Not affiliated with or endorsed by OpenAI.</p></div><nav aria-label="Project links"><a href="https://github.com/Agend-Systems/codex-usage-tracker">Source code</a><a href="https://github.com/Agend-Systems/codex-usage-tracker/issues">Report an issue</a><a href="https://github.com/Agend-Systems/codex-usage-tracker/blob/main/CHANGELOG.md">Changelog</a><a href="https://github.com/Agend-Systems/codex-usage-tracker/blob/main/LICENSE">MIT license</a></nav></footer>
+</body>
+</html>
