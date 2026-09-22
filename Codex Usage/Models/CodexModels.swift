@@ -32,6 +32,25 @@ struct CodexAccount: Codable, Equatable {
   var email: String?
   var planType: String?
 
+  static func planDisplayName(for rawValue: String) -> String {
+    let normalized = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      .replacingOccurrences(of: "-", with: "_")
+    // Known names and aliases: openai/codex, codex-rs/protocol/src/auth.rs.
+    // Omit "Self Serve" in the compact badge; the tooltip retains the raw identifier.
+    switch normalized {
+    case "prolite", "pro_lite": return "Pro Lite"
+    case "self_serve_business_prolite", "self_serve_business_pro_lite":
+      return "Business Pro Lite"
+    case "self_serve_business_usage_based": return "Business Usage Based"
+    case "ent26", "hc": return "Enterprise"
+    case "enterprise_cbp_automation": return "Enterprise (Automation)"
+    case "enterprise_cbp_usage_based": return "Enterprise CBP Usage Based"
+    case "education": return "Edu"
+    default:
+      return normalized.split(separator: "_").joined(separator: " ").capitalized
+    }
+  }
+
   private enum CodingKeys: String, CodingKey { case type, email, planType }
 
   init(kind: Kind, email: String? = nil, planType: String? = nil) {
