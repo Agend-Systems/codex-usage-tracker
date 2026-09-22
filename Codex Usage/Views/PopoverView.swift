@@ -122,9 +122,12 @@ struct PopoverView: View {
         HStack(spacing: 5) {
           if let email = snapshot?.account?.email { Text(email) }
           if let plan = snapshot?.account?.planType ?? snapshot?.limits?.buckets.first?.planType {
-            Text(plan.uppercased()).font(.caption2.bold()).padding(.horizontal, 5).padding(
-              .vertical, 2
-            ).background(.secondary.opacity(0.15), in: Capsule())
+            Text(CodexAccount.planDisplayName(for: plan))
+              .font(.caption2.bold())
+              .padding(.horizontal, 5)
+              .padding(.vertical, 2)
+              .background(.secondary.opacity(0.15), in: Capsule())
+              .help(plan)
           }
         }
         .font(.caption)
