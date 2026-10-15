@@ -228,9 +228,12 @@ struct PopoverView: View {
           .font(.caption).foregroundStyle(.secondary)
         }
         Spacer()
-        Text(credits.unlimited == true ? "∞" : credits.balance ?? "—")
+        Text(credits.formattedBalance())
           .font(.title2.bold()).monospacedDigit()
           .foregroundStyle(TrackerDesign.green)
+          .lineLimit(1)
+          .minimumScaleFactor(0.75)
+          .layoutPriority(1)
       }
     }
   }

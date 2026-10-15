@@ -101,6 +101,18 @@ struct CreditSnapshot: Codable, Equatable, Sendable {
   var hasCredits: Bool? = nil
   var unlimited: Bool? = nil
   var balance: String? = nil
+
+  func formattedBalance(locale: Locale = .current) -> String {
+    if unlimited == true { return "∞" }
+    guard let balance = balance?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else {
+      return "—"
+    }
+    guard
+      balance.range(of: #"^[+-]?[0-9]+(?:\.[0-9]+)?$"#, options: .regularExpression) != nil,
+      let amount = Decimal(string: balance, locale: Locale(identifier: "en_US_POSIX"))
+    else { return balance }
+    return amount.formatted(.number.locale(locale).precision(.fractionLength(0...2)))
+  }
 }
 
 struct SpendControlLimitSnapshot: Codable, Equatable, Sendable {
