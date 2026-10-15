@@ -2,6 +2,10 @@
 
 All notable changes to Codex Usage Tracker are documented here.
 
+## 0.1.5 — 2026-10-15
+
+- Round credit balances to two decimal places with local number separators and keep them on one line.
+
 ## 0.1.4 — 2026-09-22
 
 - Show readable account plan names in the usage popover.
