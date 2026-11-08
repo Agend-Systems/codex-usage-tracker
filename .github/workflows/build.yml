@@ -85,6 +85,9 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write
+    outputs:
+      published: ${{ steps.release.outputs.publish }}
+      tag: ${{ steps.release.outputs.tag }}
     steps:
       - name: Plan release
         id: release
@@ -315,3 +318,15 @@ jobs:
             "$RUNNER_TEMP/developer-id-application.p12" \
             "$RUNNER_TEMP/DeveloperIDG2CA.cer" \
             "$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+
+  update-homebrew:
+    name: Update Homebrew cask
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    permissions:
+      contents: write
+    uses: Agend-Systems/homebrew-tap/.github/workflows/update-codex-usage.yml@c037a1a938723c9053955cd53f982b5d6b377626
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+    secrets:
+      tap_deploy_key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
